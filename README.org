@@ -14,7 +14,9 @@ Therefore, these scripts
 - Stop as soon as anything fails
 - Generate good transcripts and reports
 
-The Scripts
+Under Construction:
+- [[file:pg-install][pg-install]] :: attempt to configure, build, install PostgreSQL
+
+Next Scripts to Write
 - [[file:pg-fetch-tarball][pg-fetch-tarball]] :: download and check PostgreSQL source tarball
 - [[file:pg-clone-git][pg-clone-git]] :: download PostgreSQL git repository
-- [[file:pg-install][pg-install]] :: attempt to configure, build, install PostgreSQL

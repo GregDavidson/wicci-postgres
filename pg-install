@@ -1,0 +1,412 @@
+#!/usr/bin/bash
+
+# Note: =Emacs= =outshine-mode= lets you treat this file as a hierarchical
+# document. TAB on comment lines beginning with asterisks will hide/show nodes
+# much like with =OrgMode=.
+
+# * Issues
+
+Most of these issues should go away before this script is released!
+
+# ** Issue: Build-Depends
+
+# Figuring out build-dependencies, including those needed for the extra features
+# we're adding, is a pain. We've always done it by hand before. We're probably
+# going to have to do it mostly by hand, but let's record all of the
+# dependencies on our various platforms and see if we can at least document them
+# and hopefully semi or fully automate their installation!
+# Notes on Proposed Solution with Debian-based Linux:
+# Basics:
+# $ apt install -y build-essential
+# Maybe:
+# $ apt install -y autotools-dev dpkg-dev devscripts
+# Get the postgresql source package
+# $ apt-get build-dep postgresql
+# or follow the advise at
+# See https://www.guyrutenberg.com/2017/09/23/use-mk-build-deps-instead-of-apt-get-build-dep/
+# $ mk-build-deps PKGNAME --install --root-cmd sudo --remove
+# and install that
+# Install all the other things:
+# apt install xsltproc libxslt1.1 libxslt1-dev # check version
+# apt install tcl tcl8.6-dev tcllib tclxml # check version
+# any libxml2 packages needed??
+# apt install tcl8.6-tdbc tcl8.6-tdbc-postgres
+# Proposed Solution with Mac: ???
+# Solutions for other platforms: ???
+
+# ** Issue: Postgres Account uncomfortable from command shell
+# Proposed solution:
+# Make sure the account exists with a nice shell.
+# - Maybe take the shell from the real-user-id?
+# - And/or make it yet another option
+# Copy over a nice =skel=
+# - start with =/etc/skel=
+# Create a =pg_skel= (where?) with
+#   - .profile .sh.d/* .guix-profile .config/guix
+#   - what goes in .sh.d and what else do we want?
+
+# Issue: Automate connections to Wicci resources
+# Proposed solution:
+# Automatically add XFiles link to ~postgres/data directory
+# Automatically add Wicci/Make/wicci1 to dynamic_librqary_path
+# in ~postgres/data/postgresql.conf
+# Do other easy changes to ~postgres/data/postgresql.conf
+# Provide options for these things!
+# - Source Wicci paths script!
+# - Make sure it defines these things!
+
+# * Install PostgreSQL for the Wicci
+
+# run with no arguments for help!
+
+# ** Name, Path, Error Management
+
+pgm_name="${0##*/}"
+pgm_dir="$(realpath $(dirname $0))"
+
+report_from() { local from="$1" level=$2; shift 2; >&2 echo "$from $level: $*"; }
+pgm_report() { report_from "$pgm" "$@"; }
+fn_report() { local from="$pgm.$1" ; shift report_from "$from" "$@"; }
+pgm_error() { pgm_report error "$*"; return 1; }
+fn_error() { fn_report error "$*"; return 1; }
+pgm_error_exit() { local code="$1"; shift; pgm_report error "$@"; exit "$code"; }
+fn_error_exit() { local code="$1"; shift; fn_report error "$@"; exit "$code"; }
+
+# stop on variable or pipe errors
+set -u
+set -o pipefail
+
+# ** Usage Patterns
+
+options=('--help' '--dryrun' '--verbose')
+
+# array arg_patterns
+# Note Posix documentation convention of
+# optional arguments in [square brackets]
+arg_patterns=(
+    ''                          # none
+    'PATH-TO-TARBALL [PARENT-INSTALL-DIR]'
+    'VERSION POSTGRESQL-GIT-REPOSITORY [PARENT-INSTALL-DIR]'
+    'VERSION [PARENT-INSTALL-DIR]'
+)
+arg_pattern_explanations=(
+    'give help'
+    'install from tar archive'
+    'install specified version from git repository'
+    'install specified version from existing source'
+)
+
+[ "${#arg_patterns[@]}" =  "${#arg_pattern_explanations[@]}" ] ||
+    pgm_error_exit 1 "#arg_patterns != #arg_pattern_explanations"
+
+give_full_help() {
+    for i in ${!arg_patterns[@]}; do
+        printf '%s %s %s\n\t%s\n' \
+               "$pgm_name" "${options[*]}" "${arg_patterns[$i]}" \
+               "${arg_pattern_explanations[$i]}"
+    done
+}
+
+# ** Who Does What?
+
+# Make bin overridable by options !!
+build_user='bin'
+
+# Dependent on $build_dir being set
+# Error exit code also indexes command in the script
+# Syntax of logfiles is compatible with OrgMode documents
+su_log_cmd() {
+    # check if "$3" already has a path before prepending $project??
+    code="$1" user="$2" log="$project/$3" ; shift 3
+    echo "** $code: $@" >> "$log"
+    echo "- Directory :: $PWD" >> "$log"
+    echo '#+begin_example' >> "$log"
+    #+end_example
+    if su - "$build_user" -c "cd ${build_dir} ; $@" >> $log
+    then
+        echo '#+end_example' >> "$log"
+        echo "** End Successful $@" >> "$log"
+        echo "OK: $@"
+    else
+        echo '#+end_example' >> "$log"
+        echo "** End Failed $@" >> "$log"
+        pgm_error_exit "$code" "$@ failed!"
+    fi
+}
+
+su_config() {
+    code="$1" ; shift
+    su_log_cmd "$code" "$build_user" 'CONFIG-LOG' "$@"
+}
+
+su_build() {
+    code="$1" ; shift
+    su_log_cmd "$code" "$build_user" 'BUILD-LOG' "$@"
+}
+
+su_install() {
+    code="$1" ; shift
+    su_log_cmd "$code" "$build_user" 'BUILD-LOG' "$@"
+}
+
+su_pg() {
+    code="$1" cmd="$2" ; shift 2
+    su_log_cmd "$code" postgres 'POSTGRES-LOG' "$@"
+}
+
+# ** Handle Other Options
+
+dryrun='false'
+help='false'
+verbose='false'
+num_options=0
+while option_arg "$0"; do shift; done
+option_arg() {
+    case "$arg" in
+
+[ -f "$0" ] && [[] "$0" = "*.tar" -o "$0" = ]]
+        --dryrun) dryrun='true' ;;
+        --help) help='true' ;;
+        --verbose) verbose='true' ;;
+        *) return 1 ;;
+    esac
+    return 0
+}
+
+# set options and count num_options and num_args
+for arg; do option_arg && let ++num_options; done
+num_args=$(( $# - $num_options ))
+
+# if no non-option arguments, give full help
+[ $num_args -eq 0 ] && { give_full_help; exit 0; }
+
+# ** Global Variables
+
+# we will need values for these global variables
+# call this once we've sussed things out from the arguments
+suss_globals() {
+    local fn='suss_globals'
+    project="${project:-postgresql-$pg_version}" ||
+        fn_error_exit 2 "$fn" "No pg_version!"
+    project_parent="${project_parent:-/usr/local/src}"
+    return 0
+}
+
+report_initial_globals() {
+    echo "pgm_name = $pgm_name"
+    echo "pgm_dir = $pgm_dir"
+    echo "help = $help"
+    echo "dryrun = $ryrun"if "*.tar.*z" }; then
+    tar_archive="$0" ; shift
+    echo "help = $help"
+
+    [ $# -gt 0 ] && [ -d "$0" ] && {
+        project_parent="$0"
+    }
+$verbose && report_initial_globals
+
+# can't call this yet!
+report_sussed_globals() {
+    echo "project = $project"
+    echo "project_parent = $project_parent"
+}
+
+# ** Determine Argument Patterns and Finalize Globals
+
+while option_arg "$0"; do shift; done
+pattern='unknown'
+
+# *** tarball pattern
+
+try_tarball() {
+    local fn='try_tarball'
+    [ -f "$1" ] || return 1
+    [[ "$1" = "*.tar" -o "$1" = "*.tar.*z" ]] || return 1
+    tar_archive=$(realpath "$1") ; shift
+    while option_arg "$1"; do shift; done
+    [ $# -gt 1 ] && [ -d "$1" ] && {
+        project_parent="$1"
+    }
+    local f f1 f2 v
+    [ -n "${tar_archive:-}" ] ||
+        fn_error_exit 3 "$fn" "no tar_archive value"
+    f1=${tar_archive##*/}
+    f2=${f1%.*}
+    case "$f1" in
+        *.tar) f=$f2 ;;
+        *.tar.*z) f=${f2%.*} ;;
+        *) fn_error_exit 4 "$fn" "unknown archive file extension(s) in $f" ;;
+    esac
+    project="$f1"
+    v=${f##*-}
+    regexp_pattern='[1-9][0-9]?.[0-9][0-9]?\(rc\)?'
+    [[ "$v" =~ $regexp_pattern ]] ||
+        fn_error_exit 5 "$fn" "unknown version pattern in $f"
+    pg_version="$v"
+    pattern='tarball'
+    return 0
+}
+
+# *** version git pattern
+
+try_version_git() {
+    local fn='try_version_git'
+    pattern='tarball'
+    fn_report "$fn" apology "$pattern pattern not yet implemented"
+    return 1
+}
+
+try_version() {
+    local fn='try_version'
+    pattern='version'
+    fn_report "$fn" apology "$pattern pattern not yet implemented"
+    return 1
+}
+
+# *** determine install pattern
+
+try_tarball || try_version_git || try_version ||
+    pgm_error_exit 6 'unrecognized install pattern'
+
+suss_globals || pgm_error_exit 7 "can't suss globals"
+$verbose && report_sussed_globals
+
+# *** Set Install Paths
+
+pgsql_dir="pgsql-$version"
+for dd in /usr/local/SW.d /usr/local/SW /usr/local; do
+    [ -d "$dd" ] && pgsql_path="$dd/$pgsql_dir" && break
+done
+pgsql_bin="$pgsql_path/bin"
+pgsql_data="$pgsql_path/data"
+pgsql_log="$pgsql_data/logfile"
+pgsql_conf="$pgsql_data/postgresql.conf"
+pgsql_conf_orig="$pgsql_conf-$version"
+
+[ -d "$pgsql_dir" ] && ! ls -qAH -- "$pgsql_dir" | grep -q . ||
+        pgm_error_exit 8 "Non-empty install directory $pgsql_dir"
+
+# *** Try to find tcl library
+
+for tcl in /usr/{lib,lib64}{,/tcl*}/tclConfig.sh; do
+    [ -f "$tcl" ] && break
+done
+if [ -f "${tcl:-}" ]; then
+    with_tcl="--with-tcl with_tclconfig=--with-tclconfig=${tcl%/*}"
+else
+    with_tcl=''
+    pgm_report warning "Can't find tcl, will proceed without it!!"
+fi
+
+# ** Prepare, Configure, Build, Install
+
+# *** Prepare Build Directory
+
+cd "$project_parent" || pgm_error_exit 9 "Can't cd to project parent directory $project_parent"
+su_build 10 mkdir -p "$project"
+cd "$project" || pgm_error_exit 11 "Can't cd to project directory $CWD/$project"
+
+# extract a readonly reference version of the sources
+[ -d Pure ] || (                # In a subshell to preserve CWD
+    cd "Pure" || pgm_error_exit 12 "Can't cd to $CWD/Pure"
+    case "$pattern" in
+        (tarball)
+            su_build 13 tar -xf "$tar_archive"
+            su_build 13 chmod -R a-w .
+            ;;
+        (*) pgm_report apology "$pattern pattern not yet implemented"
+            exit 14 ;;
+    esac
+)
+
+# Skip any build directories from prior attempts
+attempt=1
+while [ -d "Attempt=$attempt" ]; do let ++attempt; done
+build_dir="Attempt=$attempt" 
+su_build 15 mkdir "$build_dir"
+cd "$build_dir" || pgm_error_exit 15 "Can't cd to build directory $CWD/$project"
+
+case "$pattern" in
+    (tarball)
+        su_build 16 tar -xf "$tar_archive"
+        ;;
+    (*) fn_report "$fn" apology "$pattern pattern not yet implemented"
+        exit 16 ;;
+esac
+
+# *** Try to configure, build and install PostgreSQL
+echo We will now try to configure, make and install a new PostgreSQL
+
+config_options=(
+    --with-libxml
+    --with-libxslt
+    --enable-debug
+    --enable-cassert
+    $with_tcl
+    --prefix="$pgsql_path"
+)
+
+su_config 18 ./configure ${config_options[*]}
+su_build 19 make
+su_install 20 make install
+
+# *** Try to configure, build and install some contributed modules
+
+# add some contributed modules
+for d in xml2 intarray citext hstore; do
+	(
+      cd contrib/"$d" || pgm_error_exit 21 "Can't cd to contrib directory $CWD/$d"
+      su_build 22 make
+      su_install 23 make install
+  )
+done
+
+# *** Procedures to run as Postgres
+
+su_pg_data() {
+    code="$1" cmd="$2" ; shift 2
+    su_pg "$code" "$cmd" -D "$pgsql_data" "$@"
+}
+
+su_pg 24 "mkdir $pgsql_data"
+
+# initialize the PostgreSQL system
+su_pg_data 25 initdb
+
+# start the PostgreSQL server
+su_pg_data 26 pg_ctl -l $pgsql_log start
+sleep 5	# seems to need a moment to get ready
+
+# add needed languages to database template1
+langs="pltcl"
+# case "$version" in
+#     8*) langs="plpgsql $langs" ;;
+# esac
+for lang in "$langs"; do
+	# try $pgsql_bin/createlang "$lang" template1
+	echo "create trusted procedural language '$lang';" | su_pg 27 psql template1
+done
+
+# create some databases
+su_pg 28 createdb wicci1
+echo "PostgreSQL installed into $pgsql_path"
+echo "$pgsql_path linked to $pgsql_link"
+su_pg 29 mv $pgsql_conf $pgsql_conf_orig
+su_pg 30 cp $pgsql_conf_orig $pgsql_conf
+
+# create some PostgreSQL superusers
+# these should really come from the command line
+# perhaps defaulting to the real-user-id
+
+echo -n 'Who should we make be PostgreSQL superuser(s)? '
+read users
+for user in $users; do
+	if awk -F: -v "u=$user" '$1==u{x=1}END{exit x}' /etc/passwd
+	then echo "No user $user"
+	else su_pg 31 createuser --superuser $user
+	fi
+done
+echo "Configure $pgsql_conf, etc.  For the Wicci:
+(1) add the Make/wicci1 directory to dynamic_library_path
+(2) symlink the XFiles directory to the PostgreSQL data directory
+Restart the server and Have Fun!"

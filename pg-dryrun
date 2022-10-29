@@ -10,7 +10,7 @@ Project_Parent='/usr/local/src'
 Project='postgresql-15.0'
 
 # remove material from previous runs
-su -s "$Build_Shell" "$Build_User" -c "set -x; rm -rf /tmp/$Pgm_Name-[1-9]*"
+su -c "set -x; rm -rf /tmp/$Pgm_Name-[1-9]* $Project_Parent/$Project/*"
 
 # create empty directories for this run
 su -s "$Build_Shell" "$Build_User" -c "set -x; mkdir -p $Project_Parent/$Project/Attempt-1"

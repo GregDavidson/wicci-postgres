@@ -75,7 +75,7 @@
 set -u
 set -o pipefail
 
-set -xv                         #get rid of this soon!!
+set -vx                         #get rid of this soon!!
 
 declare -r Pgm_Name="${0##*/}"
 declare -r Pgm_Dir="$(realpath $(dirname $0))"
@@ -84,16 +84,42 @@ declare -r Pgm_Dir="$(realpath $(dirname $0))"
 Phase=SETUP                     # Will change! Logs are LOG-$Phase 
 Build_Shell='/bin/dash'         # May change!
 Build_User='bin'                # May change!
-Build_Dir="/tmp/$Pgm_Name-$$"   # Will change!
-su -s "$Build_Shell" "$Build_User" -c "mkdir -p $Build_Dir" &&
+Build_Dir="/tmp/$Pgm_Name-$$"   # Will change! LOGs live here temporarily
+su -s "$Build_Shell" "$Build_User" -c "mkdir -p $Build_Dir"
 
+# The eventual $Build_Dir will be
+# $Project_Parent/$Project/postgresql-$Version/Attempt-1
+# which will contain
+# - the postgresql sources for this build attempt
+# - the log files
+# This all gets set up in the Phase=SETUP
+# The Phase=SETUP logs will initially live in our
+# temporary Build_Dir="/tmp/$Pgm_Name-$$"
+# - $$ expands to the PID of this shell process
+# At the beginning of the Phase=BUILD
+# - or maybe at the end of Phase=SETUP?? check!!
+# we will be setting
+# Build_Dir=$Project_Parent/$Project/postgresql-$Version/Attempt-1
+# and if this build fails part way though (which it will)
+# this script will automatically create fresh Build_Dirs of
+# ... Attempt-2 ... and so on.
+
+# All informational messages go through here
+# to current LOG and to stderr
+# report_from REPORT-SOURCE REPORT...
 report_from() {
-    local from="$1" shift
-    printf -- '%s\n' "$from: $*" |
-        su -s $Build_Shell "$Build_User" -c "tee -a $Build_Dir/LOG-$Phase" >&2
+    set -vx                         # debug temp!!!
+    local from="$1"; shift
+    # debug temp inside su -c !!!
+    printf -- '%s: %s\n' "$from" "$*" |
+        su -s "$Build_Shell" "$Build_User" \
+           -c "set -vx ; tee -a \"$Build_Dir/LOG-$Phase\"" >&2
 }
-2>/dev/null report_from '- OK :' "mkdir -p $Build_Dir"
+# Let's retroactively log the creation of the temporary $Build_Dir
+# And just because, let's only log it.
+2>/dev/null report_from '- OK :' mkdir -p "$Build_Dir"
 
+# exit 0                          # debug temp!!!
 level_report() {
     local from="$Pgm_Name $1"; shift
     report_from "$from" "$@"
@@ -113,7 +139,7 @@ code_fn_error() {
     exit "$code"
 }
 
-# how can we do this just using bash features?
+# how can we do this just using bash features??
 empty_dir() { [ -d "$1" ] && ! ls -qAH -- "$1" | grep -q .; }
 
 # ** Usage Patterns
@@ -124,42 +150,44 @@ declare -rA Patterns=( [help]=0 [tarball]=1 [git-dir]=2 [src-dir]=3 )
 # In array Arg_Patterns, note Posix documentation convention
 # of optional arguments in [square brackets]
 declare -ra Arg_Patterns=(
-    ''
-    'PATH-TO-TARBALL [PARENT-INSTALL-DIR]'
-    'VERSION POSTGRESQL-GIT-REPOSITORY [PARENT-INSTALL-DIR]'
-    'VERSION [PARENT-INSTALL-DIR]'
+''
+'PATH-TO-TARBALL [PARENT-INSTALL-DIR]'
+'VERSION POSTGRESQL-GIT-REPOSITORY [PARENT-INSTALL-DIR]'
+'VERSION [PARENT-INSTALL-DIR]'
 )
 declare -ra Arg_Pattern_Explanations=(
-    'give help'
-    'install from tar archive'
-    'install specified version from git repository'
-    'install specified version from existing source'
+'give help'
+'install from tar archive'
+'install specified version from git repository'
+'install specified version from existing source'
 )
 [ "${#Patterns[@]}" =  "${#Arg_Patterns[@]}" ] ||
-    code_error 1 "#Patterns != #Arg_Patterns"
+code_error 1 "#Patterns != #Arg_Patterns"
 [ "${#Patterns[@]}" =  "${#Arg_Pattern_Explanations[@]}" ] ||
-    code_error 2 "#Patterns != #Arg_Pattern_Explanations"
+code_error 2 "#Patterns != #Arg_Pattern_Explanations"
 
 give_full_help() {
-    local i
-    for i in ${!Arg_Patterns[@]}; do
-        printf '%s %s %s\n\t%s\n' \
-               "$Pgm_Name" "${Options[*]}" "${Arg_Patterns[$i]}" \
-               "${Arg_Pattern_Explanations[$i]}"
-    done
+local i
+for i in ${!Arg_Patterns[@]}; do
+    printf '%s %s %s\n\t%s\n' \
+            "$Pgm_Name" "${Options[*]}" "${Arg_Patterns[$i]}" \
+            "${Arg_Pattern_Explanations[$i]}"
+done
 }
 
 # ** Who Does What?
 
-su_code_user_cmd exit-code user cmd...
+# su_code_user_cmd exit-code user cmd...
 # Every side-effecting command comes through this function!
 # Error exit code also indexes command in the script
 # Syntax of logfiles is compatible with OrgMode documents
 # Commands run and logs live under Build_Dir
 su_code_user_cmd() {
+    set -vx                     # debug temp!!!
     local code="$1" user="$2"; shift 2
     local dir="$Build_Dir"
     local log="$Build_Dir/LOG-$Phase"
+    # ERROR ERROR MUST STERILIZE - Vger !!!  use report_from!!!
     printf '** %d: %s\n- Directory :: %s\n' "$code" "$* $PWD" >> "$log"
     $Dry_Run && return 0
     echo '#+begin_example' >> "$log"
@@ -251,7 +279,7 @@ report_sussed_globals() {
 # *** tarball pattern
 
 try_tarball() {
-#    set -xv
+#   set -vx                  # debug temp!!!
     local fn='try_tarball'
     [ $# -gt 0 -a $# -le 2 ] || return 1
     [ -f "$1" ] || return 1
@@ -368,10 +396,10 @@ get_build_dir() {
         let ++n
     done
     local old="$Build_Dir" new="$parent/Attempt-$n"
-    su_code_user_cmd 18 root "chown -R $Build_User $old"
+    su_code_user_cmd 18 root "chown -R \"$Build_User\" \"$old\""
     get_empty_code_user_path 19 "$Build_User" "$new"
     su_code_cmd 20 mv "$old"/* "$new"
-    declare -r Build_Dir="$new" # should not change again
+    declare -gr Build_Dir="$new" # should not change again
     cd "$Build_Dir" ||
         code_fn_error 21 "$fn" "Can't cd to build directory $Build_Dir"
 }

@@ -70,22 +70,30 @@
 # run with no arguments for help!
 
 # ** Name, Paths, Logs, Error Management
-set -xv
 
-Pgm_Name="${0##*/}"
-Pgm_Dir="$(realpath $(dirname $0))"
+# stop on variable or pipe errors
+set -u
+set -o pipefail
 
-# Mutable Globals - these will change!
-Phase=SETUP                     # Logs are named LOG-$Phase 
+set -xv                         #get rid of this soon!!
+
+declare -r Pgm_Name="${0##*/}"
+declare -r Pgm_Dir="$(realpath $(dirname $0))"
+
+# Mutable Globals
+Phase=SETUP                     # Will change! Logs are LOG-$Phase 
 Build_Shell='/bin/dash'         # May change!
 Build_User='bin'                # May change!
 Build_Dir="/tmp/$Pgm_Name-$$"   # Will change!
-su -s "$Build_Shell" "$Build_User" -c "mkdir -p $Build_Dir"
+su -s "$Build_Shell" "$Build_User" -c "mkdir -p $Build_Dir" &&
 
 report_from() {
     local from="$1" shift
-    echo "$from: $*" | su -s $Build_Shell bin -c "tee -a $Build_Dir/LOG-$Phase" >&2 
+    printf -- '%s\n' "$from: $*" |
+        su -s $Build_Shell "$Build_User" -c "tee -a $Build_Dir/LOG-$Phase" >&2
 }
+2>/dev/null report_from '- OK :' "mkdir -p $Build_Dir"
+
 level_report() {
     local from="$Pgm_Name $1"; shift
     report_from "$from" "$@"
@@ -106,26 +114,22 @@ code_fn_error() {
 }
 
 # how can we do this just using bash features?
-empty_dir() { [ -d "$1" ] && ! ls -qAH -- "$$1" | grep -q .; }
-
-# stop on variable or pipe errors
-set -u
-set -o pipefail
+empty_dir() { [ -d "$1" ] && ! ls -qAH -- "$1" | grep -q .; }
 
 # ** Usage Patterns
 
-options=('--help' '--dryrun' '--verbose')
+declare -r options=('--help' '--dryrun' '--verbose')
 
-declare -A Patterns=( [help]=0 [tarball]=1 [git-dir]=2 [src-dir]=3 )
+declare -rA Patterns=( [help]=0 [tarball]=1 [git-dir]=2 [src-dir]=3 )
 # In array Arg_Patterns, note Posix documentation convention
 # of optional arguments in [square brackets]
-Arg_Patterns=(
+declare -ra Arg_Patterns=(
     ''
     'PATH-TO-TARBALL [PARENT-INSTALL-DIR]'
     'VERSION POSTGRESQL-GIT-REPOSITORY [PARENT-INSTALL-DIR]'
     'VERSION [PARENT-INSTALL-DIR]'
 )
-Arg_Pattern_Explanations=(
+declare -ra Arg_Pattern_Explanations=(
     'give help'
     'install from tar archive'
     'install specified version from git repository'
@@ -134,9 +138,10 @@ Arg_Pattern_Explanations=(
 [ "${#Patterns[@]}" =  "${#Arg_Patterns[@]}" ] ||
     code_error 1 "#Patterns != #Arg_Patterns"
 [ "${#Patterns[@]}" =  "${#Arg_Pattern_Explanations[@]}" ] ||
-    code_error 1 "#Patterns != #Arg_Pattern_Explanations"
+    code_error 2 "#Patterns != #Arg_Pattern_Explanations"
 
 give_full_help() {
+    local i
     for i in ${!Arg_Patterns[@]}; do
         printf '%s %s %s\n\t%s\n' \
                "$Pgm_Name" "${Options[*]}" "${Arg_Patterns[$i]}" \
@@ -155,20 +160,20 @@ su_code_user_cmd() {
     local code="$1" user="$2"; shift 2
     local dir="$Build_Dir"
     local log="$Build_Dir/LOG-$Phase"
-    printf '** %d: %s\n- Directory :: %s\n' "$@" "$PWD" >> "$log"
+    printf '** %d: %s\n- Directory :: %s\n' "$code" "$* $PWD" >> "$log"
     $Dry_Run && return 0
     echo '#+begin_example' >> "$log"
-    if su -s "$Build_Shell" "$Build_User" -c "cd ${dir} ; $@" >> $log
+    if su -s "$Build_Shell" "$Build_User" -c "cd ${dir} ; $*" >> $log
     then
-        printf '- %s!\n#+end_example' OK >> "$log"
+        printf -- '- %s!\n#+end_example' OK >> "$log"
         echo "OK: $@"
     else
-        printf '- %s!\n#+end_example' FAILED >> "$log"
+        printf -- '- %s!\n#+end_example' FAILED >> "$log"
         code_error "$code" "$@ failed!"
     fi
 }
 
-su_build() {
+su_code_cmd() {
     code="$1" ; shift
     su_code_user_cmd "$code" "$Build_User" "$@"
 }
@@ -205,7 +210,7 @@ done
 
 # Reset command line arguments
 set -- "${Args[@]}"             # check this works!
-[ "X${Args[*]}" = "X$*" ] || code_error 50 "Args - foiled again!"
+[ "X${Args[*]}" = "X$*" ] || code_error 3 "Args - foiled again!"
 
 # if no non-option arguments, give full help
 [ ${#Args[@]} -eq 0 ] && { give_full_help; exit 0; }
@@ -228,7 +233,7 @@ $Verbose && report_initial_globals
 suss_globals() {
     local fn='suss_globals'
     Project="${Project:-postgresql-$Version}" ||
-        code_fn_error 2 "$fn" "No pg_version!"
+        code_fn_error 4 "$fn" "No pg_version!"
     Project_Parent="${Project_Parent:-/usr/local/src}"
     return 0
 }
@@ -266,9 +271,9 @@ try_tarball() {
     local v=${f##*-}            # trial version string
     local regexp_pattern='[1-9][0-9]?.[0-9][0-9]?(rc)?'
     [[ "$v" =~ $regexp_pattern ]] ||
-        code_fn_error 4 "$fn" "unknown version pattern in $f"
+        code_fn_error 5 "$fn" "unknown version pattern in $f"
     # We're satisfied, so
-    Archive=$(realpath "$f1")
+    Archive=$(realpath "$1")
     Version="$v"
     Project="$f"
     if [ $# = 2 ]; then
@@ -328,9 +333,9 @@ fi
 
 # *** Prepare Build Directory
 
-cd "$Project_Parent" || code_error 9 "Can't cd to project parent directory $Project_parent"
-su_code_user_cmd 10 "$Build_User" mkdir -p "$Project_Parent/$Project"
-cd "$Project" || code_error 11 "Can't cd to project directory $Project_Parent/$Project"
+cd "$Project_Parent" || code_error 8 "Can't cd to project parent directory $Project_parent"
+su_code_cmd 9 mkdir -p "$Project_Parent/$Project"
+cd "$Project" || code_error 10 "Can't cd to project directory $Project_Parent/$Project"
 
 # get_empty_code_user_path EXIT-CODE USER DIR_PATH
 # Create or find empty directory DIR_PATH
@@ -346,28 +351,29 @@ get_empty_code_user_path() {
 # remove the now-empty TEMP-DIR
 untar_archive() {
     local a="$1" p="$2" d="${3:-.}" t="${4:-Temp}" fn='untar_archive'
-    get_empty_code_user_path 12 "$t"
-    su_build 12 tar -C "$t" -xf "$a" ||
-        code_fn_error 12 "$fn" "Can't extract $a in $(real_dir $t)"
-    su_build 12 mv "$t/$p" "$d" ||
-        code_fn_error 12 "$fn" "Can't mv $t/$p $d"
-    su_build 12 rmdir "$t" ||
-        code_fn_error 12 "$fn" "Can't remove temporary directory $(real_dir $t)"
+    ( Dry_Run=false; get_empty_code_user_path 11 "$Build_User" "$t" ) # debug!!!
+    su_code_cmd 12 tar -C "$t" -xf "$a" ||
+        code_fn_error 13 "$fn" "Can't extract $a in $(real_dir $t)"
+    su_code_cmd 14 mv "$t/$p" "$d" ||
+        code_fn_error 15 "$fn" "Can't mv $t/$p $d"
+    su_code_cmd 16 rmdir "$t" ||
+        code_fn_error 17 "$fn" "Can't remove temporary directory $(real_dir $t)"
 }
 
 # Skip any build directories from prior attempts
 get_build_dir() {
-    local n=1 fn='get_build_dir'
+    local n=1 parent="$Project_Parent/$Project" fn='get_build_dir'
+    cd "$parent" || code_fn_error 18 "$fn" "Can't cd to $parent"
     while [ -d "Attempt-$n" ] && ! empty_dir "Attempt-$n" ; do
         let ++n
     done
-    local new_build_dir="Attempt-$Attempt"
-    su_code_user_cmd 15 root "chown -R $Build_User $Build_Dir"
-    su_build 15 mv "$Build_Dir"/* "$new_build_dir"
-    get_empty_code_user_path 15 "$new_build_dir"
-    Build_Dir="$new_build_dir"
+    local old="$Build_Dir" new="$parent/Attempt-$n"
+    su_code_user_cmd 18 root "chown -R $Build_User $old"
+    get_empty_code_user_path 19 "$Build_User" "$new"
+    su_code_cmd 20 mv "$old"/* "$new"
+    declare -r Build_Dir="$new" # should not change again
     cd "$Build_Dir" ||
-        code_fn_error 15 "$fn" "Can't cd to build directory $Build_Dir"
+        code_fn_error 21 "$fn" "Can't cd to build directory $Build_Dir"
 }
 
 get_build_dir
@@ -377,11 +383,11 @@ $Verbose && report_sussed_globals
 case "$Pattern" in
     (tarball)
         untar_archive "$Archive" "$Project"
-        su_build 13 chmod -R a-w "$Project"
+        su_code_cmd 22 chmod -R a-w "$Project"
         untar_archive "$Archive" "$Project" "$Build_Dir"
         ;;
     (*) fn_level_report "$fn" apology "$Pattern pattern not yet implemented"
-        exit 16 ;;
+        exit 23 ;;
 esac
 
 # *** Try to configure, build and install PostgreSQL
@@ -398,30 +404,28 @@ Config_Options=(
     --prefix="$pgsql_path"
 )
 
-su_config 18 ./configure ${Config_Options[*]}
+su_code_cmd 24 ./configure ${Config_Options[*]}
 
 Phase=BUILD
 
-su_build 19 make
+su_code_cmd 25 make
 
 Phase=INSTALL
 
-Build_User=postgres get_empty_code_user_path 20 "$pgsql_path"
-su_install 20 make install
+get_empty_code_user_path 26 postgres "$pgsql_path"
+su_code_cmd 27 make install
 
 # *** Try to configure, build and install some contributed modules
 
 # add some contributed modules
-cd "$Build_Dir/contrib" || code_error 21 "Can't cd to $Build_Dir/contrib"
+cd "$Build_Dir/contrib" || code_error 28 "Can't cd to $Build_Dir/contrib"
 
 for d in xml2 intarray citext hstore; do
 	(
       Phase=$d-BUILD
-      su_code_user_cmd \
-          22 "$Build_User" make
+      su_code_user_cmd 29 "$Build_User" make
       Phase=$d-INSTALL
-      su_code_user_cmd \
-          23 "$Build_User" make install
+      su_code_user_cmd  30 "$Build_User" make install
   )
 done
 
@@ -434,13 +438,13 @@ su_pg_data() {
 
 Phase=POSTGRES
 
-su_pg 24 "mkdir $pgsql_data"
+su_pg 31 "mkdir $pgsql_data"
 
 # initialize the PostgreSQL system
-su_pg_data 25 initdb
+su_pg_data 32 initdb
 
 # start the PostgreSQL server
-su_pg_data 26 pg_ctl -l $pgsql_log start
+su_pg_data 33 pg_ctl -l $pgsql_log start
 sleep 5	# seems to need a moment to get ready
 
 # add needed languages to database template1
@@ -450,15 +454,15 @@ Langs="pltcl"
 # esac
 for lang in "$Langs"; do
 	# try $pgsql_bin/createlang "$lang" template1
-	echo "create trusted procedural language '$lang';" | su_pg 27 psql template1
+	echo "create trusted procedural language '$lang';" | su_pg 34 psql template1
 done
 
 # create some databases
-su_pg 28 createdb wicci1
+su_pg 35 createdb wicci1
 echo "PostgreSQL installed into $pgsql_path"
 echo "$pgsql_path linked to $pgsql_link"
-su_pg 29 mv $pgsql_conf $pgsql_conf_orig
-su_pg 30 cp $pgsql_conf_orig $pgsql_conf
+su_pg 36 mv $pgsql_conf $pgsql_conf_orig
+su_pg 37 cp $pgsql_conf_orig $pgsql_conf
 
 # create some PostgreSQL superusers
 # these should really come from the command line
@@ -469,7 +473,7 @@ read users
 for user in $users; do
 	if awk -F: -v "u=$user" '$1==u{x=1}END{exit x}' /etc/passwd
 	then echo "No user $user"
-	else su_pg 31 createuser --superuser $user
+	else su_pg 38 createuser --superuser $user
 	fi
 done
 echo "Configure $pgsql_conf, etc.  For the Wicci:

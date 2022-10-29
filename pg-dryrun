@@ -1,0 +1,16 @@
+#!/usr/bin/bash
+set -u
+
+# Create some directories in advance so that we can test ./pg-install --dryrun
+
+Pgm_Name='pg-install'
+Build_Shell='/bin/dash'
+Build_User='bin'
+Project_Parent='/usr/local/src'
+Project='postgresql-15.0'
+
+# remove material from previous runs
+su -s "$Build_Shell" "$Build_User" -c "set -x; rm -rf /tmp/$Pgm_Name-[1-9]*"
+
+# create empty directories for this run
+su -s "$Build_Shell" "$Build_User" -c "set -x; mkdir -p $Project_Parent/$Project/Attempt-1"

@@ -1,0 +1,11 @@
+* PostgreSQL Installation Notes
+
+Please place what you're figuring out about how to install PostgreSQL for the
+Wicci on your platform in a file in this directory, and then create a link from
+this README to your platform-specific or other informational document. OrgMode
+format preferred but whatever floats your boat!
+
+Files:
+
+[[file:linux-notes.org][General Linux Notes]]
+[[file:debian-notes.org][Debian Gnu/Linux Notes]]

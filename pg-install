@@ -4,149 +4,41 @@
 # document. TAB on comment lines beginning with asterisks will hide/show nodes
 # much like with =OrgMode=.
 
-# * Issues
-
-# Prune these issues before this script is released!
-
-# ** Issue: Logging of error messages
-# It's not happening!
-# How can we streamline this?
-# And might as well use something like try
-
-# ** Issue: Build-Depends
-
-# Figuring out build-dependencies, including those needed for the extra features
-# we're adding, is a pain. We've always done it by hand before. We're probably
-# still going to have to do it mostly by hand, but let's record all of the
-# dependencies on our various platforms and see if we can at least document them
-# and hopefully semi or fully automate their installation!
-# Notes on Proposed Solution with Debian-based Linux:
-# Basics:
-# $ apt install -y build-essential
-# Maybe:
-# $ apt install -y autotools-dev dpkg-dev devscripts
-# Get the postgresql source package
-# $ apt-get build-dep postgresql
-# or follow the advise at
-# See https://www.guyrutenberg.com/2017/09/23/use-mk-build-deps-instead-of-apt-get-build-dep/
-# $ mk-build-deps PKGNAME --install --root-cmd sudo --remove
-# and install that
-# Install all the other things:
-# apt install xsltproc libxslt1.1 libxslt1-dev # check version
-# apt install tcl tcl8.6-dev tcllib tclxml # check version
-# any libxml2 packages needed??
-# apt install tcl8.6-tdbc tcl8.6-tdbc-postgres
-# Proposed Solution with Mac: ???
-# Solutions for other platforms: ???
-
-# ** Issue: Ensure Accounts Exist
-
-# - bin
-# - postgres
-
-# ** Issue: Postgres Account uncomfortable from command shell
-# Proposed solution:
-# Make sure the account exists with a nice shell.
-# - Maybe take the shell from the real-user-id?
-# - And/or make it yet another option
-# Copy over a nice =skel=
-# - start with =/etc/skel=
-# Create a =pg_skel= (where?) with
-#   - .profile .sh.d/* .guix-profile .config/guix
-#   - what goes in .sh.d and what else do we want?
-
-# Issue: Automate connections to Wicci resources
-# Proposed solution:
-# Automatically add XFiles link to ~postgres/data directory
-# Automatically add Wicci/Make/wicci1 to dynamic_librqary_path
-# in ~postgres/data/postgresql.conf
-# Do other easy changes to ~postgres/data/postgresql.conf
-# Provide options for these things!
-# - Source Wicci paths script!
-# - Make sure it defines these things!
-
 # * Install PostgreSQL for the Wicci
 
-# run with no arguments for help!
+# Run script with no arguments for help!
 
-# ** Name, Paths, Logs, Error Management
+# ** A Few Initial Settings and Global Parameters
 
 # stop on variable or pipe errors
-set -u
-set -o pipefail
-
-set -vx                         #get rid of this soon!!
+set -eu
+set -vx                         # DEBUG !!
 
 declare -r Pgm_Name="${0##*/}"
 declare -r Pgm_Dir="$(realpath $(dirname $0))"
 
-# Mutable Globals
-Phase=SETUP                     # Will change! Logs are LOG-$Phase 
-Build_Shell='/bin/dash'         # May change!
-Build_User='bin'                # May change!
-Build_Dir="/tmp/$Pgm_Name-$$"   # Will change! LOGs live here temporarily
-su -s "$Build_Shell" "$Build_User" -c "mkdir -p $Build_Dir"
+# Normally we Capitalize_Global_Parameters
+# We're deliberately leaving =from= as lower case
+# Allowing code to be moved into and out of functions
+declare -r from=''                # where we're coming from
 
-# The eventual $Build_Dir will be
-# $Project_Parent/$Project/postgresql-$Version/Attempt-1
-# which will contain
-# - the postgresql sources for this build attempt
-# - the log files
-# This all gets set up in the Phase=SETUP
-# The Phase=SETUP logs will initially live in our
-# temporary Build_Dir="/tmp/$Pgm_Name-$$"
-# - $$ expands to the PID of this shell process
-# At the beginning of the Phase=BUILD
-# - or maybe at the end of Phase=SETUP?? check!!
-# we will be setting
-# Build_Dir=$Project_Parent/$Project/postgresql-$Version/Attempt-1
-# and if this build fails part way though (which it will)
-# this script will automatically create fresh Build_Dirs of
-# ... Attempt-2 ... and so on.
+# Currently readonly
+# Ideally settable from argument options
+declare -r Build_Shell='/bin/dash' # Make settable from config
+declare -r Build_User='bin'        # Make settable from config
 
-# All informational messages go through here
-# to current LOG and to stderr
-# report_from REPORT-SOURCE REPORT...
-report_from() {
-    set -vx                         # debug temp!!!
-    local from="$1"; shift
-    # debug temp inside su -c !!!
-    printf -- '%s: %s\n' "$from" "$*" |
-        su -s "$Build_Shell" "$Build_User" \
-           -c "set -vx ; tee -a \"$Build_Dir/LOG-$Phase\"" >&2
-}
-# Let's retroactively log the creation of the temporary $Build_Dir
-# And just because, let's only log it.
-2>/dev/null report_from '- OK :' mkdir -p "$Build_Dir"
-
-# exit 0                          # debug temp!!!
-level_report() {
-    local from="$Pgm_Name $1"; shift
-    report_from "$from" "$@"
-}
-fn_level_report() {
-    local from="$Pgm_Name.$1 $2" ; shift 2
-    report_from "$from" "$@"
-}
-code_error() {
-    local code="$1"; shift
-    level_report "error $code" "$@"
-    exit "$code"
-}
-code_fn_error() {
-    local code="$1" fn="$2"; shift 2
-    fn_level_report "$fn" "error $code" "$@"
-    exit "$code"
-}
-
-# how can we do this just using bash features??
-empty_dir() { [ -d "$1" ] && ! ls -qAH -- "$1" | grep -q .; }
+# A Few of the Globals which will be set later
+declare -g Phase                # Logs are LOG-$Phase
+declare -g PG_Path              # defined in Install Paths below
 
 # ** Usage Patterns
+
+# How this script can be used
 
 declare -r options=('--help' '--dryrun' '--verbose')
 
 declare -rA Patterns=( [help]=0 [tarball]=1 [git-dir]=2 [src-dir]=3 )
+
 # In array Arg_Patterns, note Posix documentation convention
 # of optional arguments in [square brackets]
 declare -ra Arg_Patterns=(
@@ -161,57 +53,23 @@ declare -ra Arg_Pattern_Explanations=(
 'install specified version from git repository'
 'install specified version from existing source'
 )
+
+# These three arrays should have the same number of elements
 [ "${#Patterns[@]}" =  "${#Arg_Patterns[@]}" ] ||
 code_error 1 "#Patterns != #Arg_Patterns"
 [ "${#Patterns[@]}" =  "${#Arg_Pattern_Explanations[@]}" ] ||
 code_error 2 "#Patterns != #Arg_Pattern_Explanations"
 
 give_full_help() {
-local i
-for i in ${!Arg_Patterns[@]}; do
-    printf '%s %s %s\n\t%s\n' \
-            "$Pgm_Name" "${Options[*]}" "${Arg_Patterns[$i]}" \
-            "${Arg_Pattern_Explanations[$i]}"
-done
+    local i
+    for i in ${!Arg_Patterns[@]}; do
+        printf '%s %s %s\n\t%s\n' \
+               "$Pgm_Name" "${Options[*]}" "${Arg_Patterns[$i]}" \
+               "${Arg_Pattern_Explanations[$i]}"
+    done
 }
 
-# ** Who Does What?
-
-# su_code_user_cmd exit-code user cmd...
-# Every side-effecting command comes through this function!
-# Error exit code also indexes command in the script
-# Syntax of logfiles is compatible with OrgMode documents
-# Commands run and logs live under Build_Dir
-su_code_user_cmd() {
-    set -vx                     # debug temp!!!
-    local code="$1" user="$2"; shift 2
-    local dir="$Build_Dir"
-    local log="$Build_Dir/LOG-$Phase"
-    # ERROR ERROR MUST STERILIZE - Vger !!!  use report_from!!!
-    printf '** %d: %s\n- Directory :: %s\n' "$code" "$* $PWD" >> "$log"
-    $Dry_Run && return 0
-    echo '#+begin_example' >> "$log"
-    if su -s "$Build_Shell" "$Build_User" -c "cd ${dir} ; $*" >> $log
-    then
-        printf -- '- %s!\n#+end_example' OK >> "$log"
-        echo "OK: $@"
-    else
-        printf -- '- %s!\n#+end_example' FAILED >> "$log"
-        code_error "$code" "$@ failed!"
-    fi
-}
-
-su_code_cmd() {
-    code="$1" ; shift
-    su_code_user_cmd "$code" "$Build_User" "$@"
-}
-
-su_pg() {
-    code="$1" cmd="$2" ; shift 2
-    su_code_user_cmd "$code" postgres "$@"
-}
-
-# ** Handle Other Options
+# ** Process Command Line Options
 
 Dry_Run='false'
 Give_Help='false'
@@ -228,8 +86,6 @@ option_arg() {
     return 0
 }
 
-# record and discard option args
-
 # record options and save non-option arguments
 Args=( )                        # Non-Option Args
 for Arg; do
@@ -244,34 +100,223 @@ set -- "${Args[@]}"             # check this works!
 [ ${#Args[@]} -eq 0 ] && { give_full_help; exit 0; }
 # put in the code for targeted help!!
 
-# ** Global Variables
+# ** Create A Temporary $Build_Dir
+
+# (1) we need to log creating the place where logs go
+# (2) code_from_user_mkdir creates directories for us but
+#     it needs "$Build_Dir" to already exist for logging!
+# Let's cut the Gordion Knot here!
+
+# Record and Create Temporary Log Directory
+Build_Dir="/tmp/$Pgm_Name-$$"   # Just for now
+# This works because =/tmp= allows anyone to create things there
+su -s "$Build_Shell" "$Build_User" -c "mkdir -p $Build_Dir"
+
+# Once we've got the proper Build Directory we'll copy
+# the logs over to it and remove this one
+
+# ** su and Logging Functions
+
+# *** Low Level Functions
+
+# Our calling context grows when functions nest
+# Ignore empty context components.
+join_froms() {
+    local result='' delim=''
+    for a; do
+        [ -n "$a" ] && result="$result$delim$a"
+        delim=' '
+    done
+    print '%s' "$result"
+}
+
+# Everything done as $Build_User come through here
+su_build() {
+    su -s "$Build_Shell" "$Build_User" -c "cd \"$Build_Dir\" ; $*"
+}
+
+# All output to the current log goes through these two functions
+
+log_sink() { su_build "cat >> LOG-$Phase"; }
+log_tee() { >&2 su_build "tee -a LOG-$Phase"; }
+
+# *** Fancy log_example Function
+
+# Using awk
+# log stdin content, if any, as an OrgMode example block
+log_example() {
+    awk -v b='#+begin_example' e='#+end_example' \
+        'NR==1{print b; print $0}END&&NR>0{print e}' | log_sink
+}
+
+# log_example() {
+#     local line content=false
+#     { while read line; do
+#           $content || {
+#               content=true
+#               printf -- '%s\n' '#+begin_example'
+#           }
+#           printf -- '%s\n' "$line"
+#       done
+#       $content && printf -- '%s\n' '#+end_example'
+#     } | log_sink
+# }
+
+# *** su_code_... Functions
+
+# su_code_from_user_dir_cmd exit-code context user dir cmd...
+# ?? Every irregular side-effecting command comes through here!
+# Report and logging syntax compatible with OrgMode documents
+su_code_from_user_dir_cmd() {
+    local code="$1" user="$3" dir="$4"; shift 4
+    local from=$(join_froms "$2" "$user" "$dir")
+    report_from '**' "$from: $*"
+    $Dry_Run && [ mkdir != "$1" ] && [ root != "$user" ] && return 0
+    su -s "$Build_Shell" "$user" -c "cd \"$dir\" ; $*"  | log_example ||
+        report_from -:: "FAILED[$code] $from" "$*"
+}
+
+# su_code_from_cmd exit-code from cmd...
+# Every side-effecting command run as $Build_User comes through here!
+# Report and logging syntax compatible with OrgMode documents
+su_code_from_cmd() {
+    su_code_from_user_dir_cmd "$1" "$2" "$Build_User" "$Build_Dir" "${@:3}"
+}
+
+su_code_cmd() {
+    su_code_from_user_dir_cmd "$1" '' "$Build_User" "$Build_Dir" "${@:2}"
+}
+
+su_pg__code_from_cmd() {
+    su_code_from_user_dir_cmd "$1" "$2" "postgres" "$PG_Path" "${@:3}"
+}
+
+# ** Reports and Logging Convenience Functions
+
+# All informational messages go through here
+# to current LOG and to stderr
+# report_from [FORMAT] FROM REPORT...
+report_from() {
+    set -vx                         # debug temp!!!
+    case "$1" in
+        (:) printf '%s: $s\n' "$1" "${2-}" ;;
+        (-:) printf '- %s: $s\n' "$1" "${2-}" ;;
+        (-::) printf '%s: $s\n' "$1" "${2-}" ;;
+        (*) printf '%s\n' "$*" ;;
+    esac | log_tee
+}
+
+set_phase() {
+    declare -g Phase="$1"
+    { printf -- '%s -*- mode: %s; -*-\n' '' Org
+      printf -- '#+%s: %s\n' TITLE 'PostgreSQL for Wicci Installation Log'
+      printf -- '#+%s: %s\n' DATE "$(date)"
+      printf -- '* The %s Phase\n' "$Phase"
+    } | log_sink
+}
+
+set_phase SETUP
+# Let's retroactively log the creation of the temporary $Build_Dir
+# And just to show, let's /only/ log it, suppressing stderr output
+2>/dev/null report_from -:: 'OK' mkdir -p "$Build_Dir"
+
+# exit 0                          # debug temp!!!
+level_report() {
+    # I'm gathering that the $Pgm_Name is superfluous
+    # local from="$Pgm_Name $1"; shift
+    local from="$1"; shift
+    report_from -:: "$from" "$@"
+}
+from_level_report() {
+    # I'm gathering that the $Pgm_Name is superfluous
+    # local from="$Pgm_Name.$1 $2" ; shift 2
+    local from="$$1 $2" ; shift 2
+    report_from -:: "$from" "$@"
+}
+code_error() {
+    local code="$1"; shift
+    level_report "error $code" "$@"
+    exit "$code"
+}
+code_from_error() {
+    local code="$1" from="$2"; shift 2
+    from_level_report "$from" "error $code" "$@"
+    exit "$code"
+}
+
+
+# *** Directory management
+
+# Using ls, grep
+# how can we do this just using bash features??
+empty_dir() { [ -d "$1" ] && ! ls -qAH -- "$1" | grep -q .; }
+
+# Using groups, cut
+# could always be hardwired with a case
+# since user should be either bin or postgres
+code_from_user_group() {
+    local from="$(join_froms "$2" 'code_from_user_group')" 
+    local code="$1" user="$3"
+    groups "$user" | cut -d ' ' -f 3 ||
+        code_from_error "$code" "$from" "Can't get $user's group"
+}
+
+# code_from_user_mkdir EXIT-CODE USER DIR_PATH
+# Create or find empty directory DIR_PATH
+code_from_user_mkdir() {
+    local from="(join_froms "$from" 'code_from_user_mkdir')"
+    local code="$1" user="$3" path="$(realpath "$4")"
+    local parent="$(dirname "$path")"
+    local group="$(code_from_user_group "$code" "$from" "$user")"
+    su_code_from_user_dir_cmd "$code" "$from" root "$parent" \
+                              mkdir -p "$path"
+    su_code_from_user_dir_cmd "$code" "$from" root "$parent" \
+                              chown "$user:$group" "$path"
+    dir="$(dirname "$path")"
+    empty_dir "$path" ||
+        code_from_error "$code" "$from" "Expected empty_dir $path"
+}
+
+# ** Reporting and Deriving Parameter Values
+
+report_param() {
+    local -n v="$1"
+    printf -- '%s = %s\n' "$1" "$v"
+}
+
+report_params() {
+    local p; for p; do report_param "$p"; done
+}
 
 report_initial_globals() {
-    echo "Program Name = $Pgm_Name"
-    echo "Program Dir = $Pgm_Dir"
-    echo "Give Help = $Give_Help"
-    echo "Dry Run = $Dry_Run"
-    echo "Arguments = ${Args[*]}"
+    report_params Pgm_Name Pgm_Dir Give_Help Dry_Run
+    printf -- '%s = %s\n' 'Arguments' "${Args[*]}"
 }
 
 $Verbose && report_initial_globals
 
 # we will need values for these global variables
-# call this once we've sussed things out from the arguments
+# call once we've sussed the argument patterns
 suss_globals() {
-    local fn='suss_globals'
-    Project="${Project:-postgresql-$Version}" ||
-        code_fn_error 4 "$fn" "No pg_version!"
-    Project_Parent="${Project_Parent:-/usr/local/src}"
+    local from='suss_globals'
+    [ -n "${Version:-}" ] ||
+        code_from_error 4 "$from" "Expected Version"
+    declare -gr Project="${Project:-postgresql-$Version}"
+    local pp="${Project_Parent:-/usr/local/src}"
+    declare -gr Project_Parent="$(realpath "$pp")" ||
+        code_from_error 4 "$from" "Expected directory path $pp"
+    declare -gr Project_Dir="$Project_Parent/$Project"
     return 0
 }
 
 # can't call this yet!
 report_sussed_globals() {
-    echo "Desired PostgreSQL Version = $Version"
-    echo "Project = $Project"
-    echo "Project Parent Directory = $Project_Parent"
-    echo "Build Directory = $Build_Dir"
+    report_params Pattern
+    case "$Pattern" in
+        (tarball) report_params Archive
+                  ;;
+    esac
+    report_params Version Project Project_Parent Project_Dir Build_Dir
 }
 
 # ** Determine Argument Patterns and Finalize Globals
@@ -280,12 +325,10 @@ report_sussed_globals() {
 
 try_tarball() {
 #   set -vx                  # debug temp!!!
-    local fn='try_tarball'
+    local from='try_tarball'
     [ $# -gt 0 -a $# -le 2 ] || return 1
     [ -f "$1" ] || return 1
-    if [ $# -gt 1 ]; then
-        [ -d "$2" ] || return 1
-    fi
+    [ $# -eq 1 ] || [ -d "$2" ] || return 1
     local f1=${1##*/} # without the path
     local f2=${f1%.*} # without last extension
     local f           # trial project name
@@ -294,35 +337,33 @@ try_tarball() {
         (*.tar.*) f=${f2%.*} ;;
         (*) return 1;;
     esac
-    Pattern='tarball'
-    # we're committed, further deviations will be errors
+    declare -gr Pattern='tarball' # commit to pattern
+    # further deviations will be errors
     local v=${f##*-}            # trial version string
     local regexp_pattern='[1-9][0-9]?.[0-9][0-9]?(rc)?'
     [[ "$v" =~ $regexp_pattern ]] ||
-        code_fn_error 5 "$fn" "unknown version pattern in $f"
+        code_from_error 5 "$from" "unknown version pattern in $f"
     # We're satisfied, so
     Archive=$(realpath "$1")
     Version="$v"
     Project="$f"
-    if [ $# = 2 ]; then
-        Project_Parent="$2"
-    fi
+    [ $# = 2 ] && Project_Parent="$2"
     return 0
 }
 
-# *** version git pattern
+# *** other patterns
 
 try_version_git() {
-    local fn='try_version_git'
+    local from='try_version_git'
     pattern='tarball'
-    fn_level_report "$fn" apology "$Pattern pattern not yet implemented"
+    from_level_report "$from" apology "$Pattern pattern not yet implemented"
     return 1
 }
 
 try_bare_version() {
-    local fn='try_bare_version'
+    local from='try_bare_version'
     pattern='version'
-    fn_level_report "$fn" apology "$Pattern pattern not yet implemented"
+    from_level_report "$from" apology "$Pattern pattern not yet implemented"
     return 1
 }
 
@@ -335,15 +376,15 @@ suss_globals || code_error 7 "can't suss globals"
 
 # *** Set Install Paths
 
-pgsql_dir="pgsql-$Version"
+PG_Dir="pgsql-$Version"
 for dd in /usr/local/SW.d /usr/local/SW /usr/local; do
-    [ -d "$dd" ] && pgsql_path="$dd/$pgsql_dir" && break
+    [ -d "$dd" ] && PG_Path="$dd/$PG_Dir" && break
 done
-pgsql_bin="$pgsql_path/bin"
-pgsql_data="$pgsql_path/data"
-pgsql_log="$pgsql_data/logfile"
-pgsql_conf="$pgsql_data/postgresql.conf"
-pgsql_conf_orig="$pgsql_conf-$Version"
+PG_Bin="$PG_Path/bin"
+PG_Data="$PG_Path/data"
+PG_Log="$PG_Data/logfile"
+PG_Conf="$PG_Data/postgresql.conf"
+PG_Conf_orig="$PG_Conf-$Version"
 
 # *** Try to find tcl library
 
@@ -361,47 +402,38 @@ fi
 
 # *** Prepare Build Directory
 
-cd "$Project_Parent" || code_error 8 "Can't cd to project parent directory $Project_parent"
-su_code_cmd 9 mkdir -p "$Project_Parent/$Project"
-cd "$Project" || code_error 10 "Can't cd to project directory $Project_Parent/$Project"
-
-# get_empty_code_user_path EXIT-CODE USER DIR_PATH
-# Create or find empty directory DIR_PATH
-get_empty_code_user_path() {
-    local code="$1" user="$2" path="$3" fn='get_empty_code_user_path'
-    su_code_user_cmd "$code" "$user" mkdir -p "$path"
-    empty_dir "$path" || code_fn_error "$code" "$fn" "Expected empty_dir $path"
-}
+cd "$Project_Parent" || code_error 8 "Can't cd to $Project_Parent"
+code_from_user_mkdir 9 '' "$Build_Dir" "$Project_Dir"
+cd "$Project" || code_error 10 "Can't cd to $Project_Dir"
 
 # extract_archive TARBALL PROJECT [DEST-DIR=.] [TEMP-DIR=Temp]
 # safely extract the given archive to an empty TEMP-DIR
 # move the TEMP-DIR/PROJECT result to DEST-DIR
 # remove the now-empty TEMP-DIR
 untar_archive() {
-    local a="$1" p="$2" d="${3:-.}" t="${4:-Temp}" fn='untar_archive'
-    ( Dry_Run=false; get_empty_code_user_path 11 "$Build_User" "$t" ) # debug!!!
+    local a="$1" p="$2" d="${3:-.}" t="${4:-Temp}" from='untar_archive'
+    ( Dry_Run=false; code_from_user_mkdir 11 "$from" "$Build_User" "$t" ) # debug!!!
     su_code_cmd 12 tar -C "$t" -xf "$a" ||
-        code_fn_error 13 "$fn" "Can't extract $a in $(real_dir $t)"
+        code_from_error 13 "$from" "Can't extract $a in $(real_dir $t)"
     su_code_cmd 14 mv "$t/$p" "$d" ||
-        code_fn_error 15 "$fn" "Can't mv $t/$p $d"
+        code_from_error 15 "$from" "Can't mv $t/$p $d"
     su_code_cmd 16 rmdir "$t" ||
-        code_fn_error 17 "$fn" "Can't remove temporary directory $(real_dir $t)"
+        code_from_error 17 "$from" "Can't remove temporary directory $(real_dir $t)"
 }
 
 # Skip any build directories from prior attempts
 get_build_dir() {
-    local n=1 parent="$Project_Parent/$Project" fn='get_build_dir'
-    cd "$parent" || code_fn_error 18 "$fn" "Can't cd to $parent"
+    local n=1 parent="$Project_Dir" from='get_build_dir'
+    cd "$parent" || code_from_error 18 "$from" "Can't cd to $parent"
     while [ -d "Attempt-$n" ] && ! empty_dir "Attempt-$n" ; do
         let ++n
     done
     local old="$Build_Dir" new="$parent/Attempt-$n"
-    su_code_user_cmd 18 root "chown -R \"$Build_User\" \"$old\""
-    get_empty_code_user_path 19 "$Build_User" "$new"
+    code_from_user_mkdir 19 "$from" "$Build_User" "$new"
     su_code_cmd 20 mv "$old"/* "$new"
     declare -gr Build_Dir="$new" # should not change again
     cd "$Build_Dir" ||
-        code_fn_error 21 "$fn" "Can't cd to build directory $Build_Dir"
+        code_from_error 21 "$from" "Can't cd to build directory $Build_Dir"
 }
 
 get_build_dir
@@ -414,14 +446,14 @@ case "$Pattern" in
         su_code_cmd 22 chmod -R a-w "$Project"
         untar_archive "$Archive" "$Project" "$Build_Dir"
         ;;
-    (*) fn_level_report "$fn" apology "$Pattern pattern not yet implemented"
+    (*) from_level_report "$from" apology "$Pattern pattern not yet implemented"
         exit 23 ;;
 esac
 
-# *** Try to configure, build and install PostgreSQL
-echo We will now try to configure, make and install a new PostgreSQL
+# ***  Configure, Build and Install PostgreSQL
+report_from '**  Configure, Build and Install PostgreSQL'
 
-Phase=CONFIG
+set_phase CONFIG
 
 Config_Options=(
     --with-libxml
@@ -429,18 +461,18 @@ Config_Options=(
     --enable-debug
     --enable-cassert
     $with_tcl
-    --prefix="$pgsql_path"
+    --prefix="$PG_Path"
 )
 
 su_code_cmd 24 ./configure ${Config_Options[*]}
 
-Phase=BUILD
+set_phase BUILD
 
 su_code_cmd 25 make
 
-Phase=INSTALL
+set_phase INSTALL
 
-get_empty_code_user_path 26 postgres "$pgsql_path"
+code_from_user_mkdir 26 "$from" postgres "$PG_Path"
 su_code_cmd 27 make install
 
 # *** Try to configure, build and install some contributed modules
@@ -450,29 +482,28 @@ cd "$Build_Dir/contrib" || code_error 28 "Can't cd to $Build_Dir/contrib"
 
 for d in xml2 intarray citext hstore; do
 	(
-      Phase=$d-BUILD
-      su_code_user_cmd 29 "$Build_User" make
-      Phase=$d-INSTALL
-      su_code_user_cmd  30 "$Build_User" make install
+      set_phase $d-BUILD
+      su_code_cmd 29 make
+      set_phase $d-INSTALL
+      su_code_cmd  30 make install
   )
 done
 
 # *** Procedures to run as Postgres
 
-su_pg_data() {
-    local code="$1" cmd="$2" ; shift 2
-    su_pg "$code" "$cmd" -D "$pgsql_data" "$@"
+su_pg_data__code_from_cmd() {
+    su_pg__code_from_cmd "$1" "$2" "$3" -D "$PG_Data" "$@:4"
 }
 
-Phase=POSTGRES
+set_phase POSTGRES
 
-su_pg 31 "mkdir $pgsql_data"
+su_pg__code_from_cmd 31 "$from" mkdir "$PG_Data"
 
 # initialize the PostgreSQL system
-su_pg_data 32 initdb
+su_pg_data__code_from_cmd 32 "$from" initdb
 
 # start the PostgreSQL server
-su_pg_data 33 pg_ctl -l $pgsql_log start
+su_pg_data__code_from_cmd 33 "$from" pg_ctl -l "$PG_Log" start
 sleep 5	# seems to need a moment to get ready
 
 # add needed languages to database template1
@@ -481,30 +512,31 @@ Langs="pltcl"
 #     8*) Langs="plpgsql $Langs" ;;
 # esac
 for lang in "$Langs"; do
-	# try $pgsql_bin/createlang "$lang" template1
-	echo "create trusted procedural language '$lang';" | su_pg 34 psql template1
+	# try $PG_Bin/createlang "$lang" template1
+	echo "create trusted procedural language '$lang';" | su_pg__code_from_cmd 34 "$from" psql template1
 done
 
 # create some databases
-su_pg 35 createdb wicci1
-echo "PostgreSQL installed into $pgsql_path"
-echo "$pgsql_path linked to $pgsql_link"
-su_pg 36 mv $pgsql_conf $pgsql_conf_orig
-su_pg 37 cp $pgsql_conf_orig $pgsql_conf
+su_pg__code_from_cmd 35 "$from" createdb wicci1
+echo "PostgreSQL installed into $PG_Path"
+echo "$PG_Path linked to $PG_Link"
+su_pg__code_from_cmd 36 "$from" mv "$PG_Conf" "$PG_Conf_orig"
+su_pg__code_from_cmd 37 "$from" cp "$PG_Conf_orig" "$PG_Conf"
 
 # create some PostgreSQL superusers
 # these should really come from the command line
 # perhaps defaulting to the real-user-id
 
+# Using awk
 echo -n 'Who should we make be PostgreSQL superuser(s)? '
 read users
 for user in $users; do
 	if awk -F: -v "u=$user" '$1==u{x=1}END{exit x}' /etc/passwd
 	then echo "No user $user"
-	else su_pg 38 createuser --superuser $user
+	else su_pg__code_from_cmd 38 "$from" createuser --superuser $user
 	fi
 done
-echo "Configure $pgsql_conf, etc.  For the Wicci:
+echo "Configure $PG_Conf, etc.  For the Wicci:
 (1) add the Make/wicci1 directory to dynamic_library_path
 (2) symlink the XFiles directory to the PostgreSQL data directory
 Restart the server and Have Fun!"

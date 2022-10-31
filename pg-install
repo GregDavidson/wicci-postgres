@@ -109,8 +109,17 @@ set -- "${Args[@]}"             # check this works!
 
 # Record and Create Temporary Log Directory
 Build_Dir="/tmp/$Pgm_Name-$$"   # Just for now
+
+# Everything done as $Build_User comes through here
+# Commands need to be simple enough to parse as $*
+# e.g. no spaces in names or paths, no special characters
+su_build_dir_cmd() {
+    local dir="$1"; shift
+    su -s "$Build_Shell" "$Build_User" -c "cd \"$dir\" ; $*"
+}
+
 # This works because =/tmp= allows anyone to create things there
-su -s "$Build_Shell" "$Build_User" -c "mkdir -p $Build_Dir"
+su_build_dir_cmd '/tmp' "mkdir -p $Build_Dir"
 
 # Once we've got the proper Build Directory we'll copy
 # the logs over to it and remove this one
@@ -130,10 +139,10 @@ join_froms() {
     print '%s' "$result"
 }
 
-# Everything done as $Build_User come through here
-su_build() {
-    su -s "$Build_Shell" "$Build_User" -c "cd \"$Build_Dir\" ; $*"
-}
+# Everything further done as $Build_User comes through here
+# Commands need to be simple enough to parse as $*
+# e.g. no spaces in names or paths, no special characters
+su_build() { su_build_dir_cmd "$Build_Dir" "$*"; }
 
 # All output to the current log goes through these two functions
 
@@ -145,8 +154,8 @@ log_tee() { >&2 su_build "tee -a LOG-$Phase"; }
 # Using awk
 # log stdin content, if any, as an OrgMode example block
 log_example() {
-    awk -v b='#+begin_example' e='#+end_example' \
-        'NR==1{print b; print $0}END&&NR>0{print e}' | log_sink
+    awk -v b='#+begin_example' -v e='#+end_example' \
+        'NR==1{print b}NR>0{print}END{if (NR>0) print e}' | log_sink
 }
 
 # log_example() {
@@ -211,7 +220,7 @@ set_phase() {
     { printf -- '%s -*- mode: %s; -*-\n' '' Org
       printf -- '#+%s: %s\n' TITLE 'PostgreSQL for Wicci Installation Log'
       printf -- '#+%s: %s\n' DATE "$(date)"
-      printf -- '* The %s Phase\n' "$Phase"
+      printf -- '* Phase %s\n' "$Phase"
     } | log_sink
 }
 
@@ -243,7 +252,6 @@ code_from_error() {
     from_level_report "$from" "error $code" "$@"
     exit "$code"
 }
-
 
 # *** Directory management
 
@@ -412,13 +420,13 @@ cd "$Project" || code_error 10 "Can't cd to $Project_Dir"
 # remove the now-empty TEMP-DIR
 untar_archive() {
     local a="$1" p="$2" d="${3:-.}" t="${4:-Temp}" from='untar_archive'
-    ( Dry_Run=false; code_from_user_mkdir 11 "$from" "$Build_User" "$t" ) # debug!!!
+    code_from_user_mkdir 11 "$from" "$Build_User" "$t"
     su_code_cmd 12 tar -C "$t" -xf "$a" ||
         code_from_error 13 "$from" "Can't extract $a in $(real_dir $t)"
     su_code_cmd 14 mv "$t/$p" "$d" ||
         code_from_error 15 "$from" "Can't mv $t/$p $d"
     su_code_cmd 16 rmdir "$t" ||
-        code_from_error 17 "$from" "Can't remove temporary directory $(real_dir $t)"
+        code_from_error 17 "$from" "Can't remove temp dir $(real_dir $t)"
 }
 
 # Skip any build directories from prior attempts
@@ -460,7 +468,7 @@ Config_Options=(
     --with-libxslt
     --enable-debug
     --enable-cassert
-    $with_tcl
+    $with_tcl                   # don't quote!
     --prefix="$PG_Path"
 )
 
@@ -524,7 +532,7 @@ su_pg__code_from_cmd 36 "$from" mv "$PG_Conf" "$PG_Conf_orig"
 su_pg__code_from_cmd 37 "$from" cp "$PG_Conf_orig" "$PG_Conf"
 
 # create some PostgreSQL superusers
-# these should really come from the command line
+# these should really come from the command line!!
 # perhaps defaulting to the real-user-id
 
 # Using awk
@@ -536,6 +544,9 @@ for user in $users; do
 	else su_pg__code_from_cmd 38 "$from" createuser --superuser $user
 	fi
 done
+
+# Automate these things, please!!
+
 echo "Configure $PG_Conf, etc.  For the Wicci:
 (1) add the Make/wicci1 directory to dynamic_library_path
 (2) symlink the XFiles directory to the PostgreSQL data directory

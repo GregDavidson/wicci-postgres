@@ -10,7 +10,7 @@ Project_Parent='/usr/local/src'
 Project='postgresql-15.0'
 
 # remove material from previous runs
-su -c "set -x; rm -rf /tmp/$Pgm_Name-[1-9]* $Project_Parent/$Project/*"
+su -c "set -x; rm -rf /tmp/$Pgm_Name-[1-9]* $Project_Parent/$Project"
 
 # This should no longer be needed:
 # create empty directories for this run

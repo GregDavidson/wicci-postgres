@@ -1,2 +1,38 @@
 * Debian Gnu/Linux Issues
 
+I didn't manage to install the build-deps for version 15.0
+and in my experience getting the build-deps for any recent
+version is fine, i.e. the version which is in the debian focal
+repository which my OS is based on..
+
+Best to do this all in a fresh directory as root because the source "installs"
+put things in the current directory and the mk-build-deps builds a lot of things
+in subdirectories of the CWD!
+#+begin_src sh
+  sudo -i
+  mkdir Postgres-Temp
+  cd Postgres-Temp
+  wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+  sh -c 'echo "deb-src http://apt.postgresql.org/pub/repos/apt/ focal-pgdg main" > \
+  /etc/apt/sources.list.d/postgresql.list'
+  apt-get update
+  apt install devscripts equivs
+  mk-build-deps postgresql --install --root-cmd sudo --remove
+  # it installed postgresql-common-build-deps version 244.pgdg20.04+1 fwiw!
+#+end_src
+
+I didn't manage to get it to install version 15.0
+#+begin_src sh
+  apt-get source postgresql-15 # worked, but
+  # it installed as files in the CWD
+  # then when I tried 
+  apt-get build-dep postgresql-15
+  # it said it needed postgresql-common
+  apt-get source postgresql-common # worked, but
+  apt-get source postgresql-common # worked, but
+  # I couldn't get a version 15 out of it
+#+end_src
+
+#+begin_example
+
+#+end_example

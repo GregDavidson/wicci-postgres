@@ -1,0 +1,111 @@
+#!/bin/bash
+set -o pipefail
+echo -n 'Warning: This script is NOT a good black box!
+It does not check everything it should check, e.g.
+if an existing PostgreSQL is running it will behave badly!
+If it fails for some reason it should stop but it will not
+try t o clean up after itself. 
+You may need to customize this script to your needs and
+you may need to alter it for future PostgreSQL releases.
+I tried to make it easy to read, understand and alter.
+You should read and understand it before using it!
+Press ENTER to continue or Control-C to abort.'
+read ans
+pgm="${0##*/}"			# name of this script
+pgm_dir="$(realpath $(dirname $0))" # location of this script
+usage="$pgm postgres-source-tarball [parent-of-make-directory]"
+# This script, when run as root should do some necessary preparation
+# for installing PostgreSQL, then delegate the rest of the job to
+pg_install_script_name="pgsql-install-as-postgres"
+# which runs as postgres.  That script will notify you of
+# a final step which must be done manually!
+try_code=10			# non-zero and unique
+try() { set 
+	(( try_code++ ))	# increment the failure code
+	if "$@"; then echo "OK: $@"
+	else echo "$pgm FAILED: $@"; exit "$try_code"
+	fi
+}
+try test root = "`whoami`"
+case $# in
+    1) make_dir="/usr/local/src" ;;
+    2) make_dir="$2" ;;
+    *) echo "$usage"; exit 1 ;;
+esac
+pg_tarball="$1"
+pg_tarball_name="${pg_tarball##*/}"
+try test -f "$pg_tarball"
+try test -d "$make_dir"
+version_and_suffix="${pg_tarball_name##postgresql-}"
+version="${version_and_suffix%%.tar.*}"
+pgdir="pgsql-$version"
+for dd in /usr/local/SW.d /usr/local/SW /usr/local; do
+    [ -d "$dd" ] && pgpath="$dd/$pgdir" && break
+done
+for dd in /usr/local/SW /usr/local; do
+    [ -d "$dd" ] && pglink="$dd/pgsql" && break
+done
+pg_user=postgres								# account owning PostgreSQL server
+pg_group="$pg_user"
+export pg_user pg_group					# for $pg_install_script
+try mkdir "$pgpath"
+case $(uname -s) in
+		Darwin) ;;									# Macs use LDAP instead
+		*)													# assuming Unix model
+				grep "^$pg_group:" /etc/group /dev/null ||
+						sudo groupadd "$pg_group"
+				grep "^$pg_user:" /etc/passwd /dev/null ||
+						sudo useradd -g "$pg_group" -d "$pglink" "$pg_user"
+				;;
+esac
+try chown "$pg_user":"$pg_group" "$pgpath"
+dir0="$PWD"			# pg_install_script might be here
+try cd "$make_dir"
+src_dir="postgresql-$version"
+src_dir_pure="$src_dir"-pure
+src_link="pgsql"
+src_link_pure="pgsql-pure"
+while test ! -d "$src_dir"; do
+	try tar xf "$pg_tarball"
+	try test -d "$src_dir"
+	try chown -R "$pg_user":"$pg_group" "$src_dir"
+	[ -d "$src_dir_pure" ] || {
+		mv "$src_dir" "$src_dir_pure"
+		chmod a-w "$src_dir_pure"
+	}
+done
+[ -e "$src_link" ] || ln -s "$src_dir" "$src_link"
+[ -e "$src_link_pure" ] || ln -s "$src_dir_pure" "$src_link_pure"
+
+try cd "$src_dir"
+# for d in "$pgm_dir" "$make_dir" "$dir0" `echo $PATH | tr : ' '`; do
+#     [ -f "$d/$pg_install_script_name" ] && break
+# done
+d="$pgm_dir"
+pg_install_script="$d/$pg_install_script_name"
+echo "pg_install_script='$pg_install_script'"
+try test -f "$pg_install_script" -a -x "$pg_install_script"
+log="pgsql-install-transcript-`date -I`"
+# The following assumes that non-zero exit codes will be generated
+# from the install_script on error:
+if su -c "$pg_install_script" "$pg_user" | su -c "tee -a $log" "$pg_user"; then
+  if [ -e "$pglink" ]; then
+    echo "Currently $pglink is:"
+    ls -l "$pglink"
+    echo "You might like to:"
+    echo rm "$pglink"
+    echo ln -s "$pgpath" "$pglink"
+    echo 'Enjoy!'
+  fi
+else
+  echo "$pgm: $pg_install_script seems to have failed!
+  Examine the transcript:
+	  $make_dir/$src_dir/$log
+  If you can fix the problem, e.g. missing packages,
+  you can try re-running (as $pg_user):
+	  $pg_install_script | tee -a $log
+  from the directory:
+	  $make_dir/$src_dir
+  Good luck\!
+  "
+fi

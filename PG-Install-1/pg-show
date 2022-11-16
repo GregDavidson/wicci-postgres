@@ -1,0 +1,13 @@
+#!/usr/bin/bash
+set -u
+
+# Create some directories in advance so that we can test ./pg-install --dryrun
+
+Pgm_Name='pg-install'
+Build_Shell='/bin/dash'
+Build_User='bin'
+Project_Parent='/usr/local/src'
+Project='postgresql-15.0'
+
+set -v
+ls -lF /tmp/$Pgm_Name-* $Project_Parent/$Project

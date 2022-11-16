@@ -1,0 +1,46 @@
+#!/bin/bash -u
+pgm="${0##*/}"
+bugout() { code="$1"; shift; >&2 echo "$*" ; exit "$code"; }
+error() { code="$1"; shift; bugout "$code" "$pgm error: $*"; }
+
+usage_msg="Usage: $pgm [[pgsql|postgresql]-]VERSION]"
+usage() { bugout 2 "$usage_msg"; }
+
+[ $# -le 1 ] || usage
+
+case "$1" in
+  "") version='NONE' ;;
+  pgsql-[0-9]*) version="${1#*-}" ;;
+  postgresql-[0-9]*) version="${1#*-}" ;;
+  1[0-9]*) version="$1" ;;
+  *) usage ;;
+esac
+
+cd /usr/local/src
+
+[[ NONE = "$version" ]] || [[ -d postgresql-"$version" ]] || usage
+
+whoami=$(whoami)
+[[ root = "$whoami" ]] ||
+  error "Currently only postgres or root can uninstall a postgresql version"
+
+rm -f pgsql pgsql-pure
+
+if [[ NONE != "$version" ]]; then
+
+  rm -rf postgresql-"$version" postgresql-"$version"-pure
+  cd /usr/local/SW.d
+  for d in pgsql-"$version"; do
+    f="$d/data/postgresql.conf"
+    if [[ -f "$f" ]]; then
+      echo "Maybe you should save $PWD/$f first?"
+    else
+      rm -rf "$d"
+    fi
+  done
+fi
+
+cd /usr/local/SW
+for f in pgsql-*; do
+  [[ -L "$f" ]] && [[ ! -a "$f" ]] && rm "$f"
+done

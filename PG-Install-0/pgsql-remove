@@ -1,0 +1,24 @@
+#!/usr/bin/bash
+pgm="${0##*/}"			# name of this script
+error() { code="$1"; shift; 2>&1 echo "$pgm Error: $*!"; exit $code; }
+test root = "`whoami`" || error 1 "Ya gotta be root"
+cd /usr/local/src
+db="$1"
+[ -d "$db" ] || error 2 "No directory $PWD/$db"
+[[ "$db" == postgresql-* ]] || error 3 "Expected postgresql-*"
+[[ "$db" == */* ]] && error 4 "Expected name, not path"
+suffix="${db##postgresql-}"
+rm -f pgsql pgsql-pure
+for d in "$db" "$db"-pure; do
+    [ -d "$d" ] && rm -r "$d"
+done
+cd /usr/local/SW.d || exit 5
+tag="pgsql-$suffix"
+conf="$tag"/data/postgresql.conf
+old_conf="$conf-$tag"
+[ -d "$tag" ] && {
+    cmp -s "$conf" "$old_conf" && cp --backup=numbered "$conf"  "$tag/$conf-$tag"
+    rm -r "$tag"
+}
+cd /usr/local/SW || exit 6
+ls -l | fgrep "$tag" && echo still exists!

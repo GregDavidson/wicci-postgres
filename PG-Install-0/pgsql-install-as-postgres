@@ -1,0 +1,87 @@
+#!/bin/bash
+# --> DRAFT --> DRAFT --> DRAFT --> do you feel the DRAFT yet?
+# This script should be run by the script
+#	pgsql-install
+# which is done as root.
+# This script may need to be customized to your system!
+# The last step must be done manually! (We'll remind you.)
+#
+# Idea for improvement: Break this script up into a few
+# chunks so that pgsql-install can catch problems earlier.
+#
+set -o pipefail
+pgm="${0##*/}"			# name of this script
+try_code=10			# non-zero and unique
+try() {
+	(( try_code++ ))	# increment the failure code
+	if "$@"; then echo "OK: $@"
+	else echo "$pgm FAILED: $@"; exit "$try_code"
+	fi
+}
+pg_user="${pg_user:-postgres}"
+try test "$pg_user" = "`whoami`"
+if [ -z "$version" ]; then
+	case "${PWD##*/}" in
+    postgresql-[89]*) ;;
+    postgresql-1[0-9]*) ;;
+    *) >&2 "Folder ${PWD##*/} format unknown"; exit 1 ;;
+	esac
+	version="${PWD##*/postgresql-}"
+fi
+pgsql_dir="pgsql-$version"
+for dd in /usr/local/SW.d /usr/local/SW /usr/local; do
+    [ -d "$dd" ] && pgsql_path="$dd/$pgsql_dir" && break
+done
+pgsql_bin="$pgsql_path/bin"
+pgsql_data="$pgsql_path/data"
+pgsql_log="$pgsql_data/logfile"
+pgsql_conf="$pgsql_data/postgresql.conf"
+pgsql_conf_orig="$pgsql_conf-$version"
+
+echo We will now try to configure, make and install a new PostgreSQL
+# Find out where the tcl library is on this system
+for tcl in /usr/{lib,lib64}{,/tcl*}/tclConfig.sh; do
+    [ -f "$tcl" ] && break
+done
+try ls "$tcl"
+try ./configure --with-libxml --with-libxslt --enable-debug --enable-cassert --with-tcl --with-tclconfig="${tcl%/*}" --prefix="$pgsql_path"
+try make
+try make install
+# add some contributed modules
+for d in xml2 intarray citext hstore; do
+	( cd contrib/"$d" && try make install )
+done
+# create a new PostgreSQL database directory
+try mkdir "$pgsql_data"
+# initialize the PostgreSQL system
+try $pgsql_bin/initdb -D $pgsql_data
+# start the PostgreSQL server
+try $pgsql_bin/pg_ctl -D $pgsql_data -l $pgsql_log start
+sleep 5	# seems to need a moment to get ready
+# add needed languages to database template1
+langs="pltcl"
+# case "$version" in
+#     8*) langs="plpgsql $langs" ;;
+# esac
+for lang in "$langs"; do
+	# try $pgsql_bin/createlang "$lang" template1
+	echo "create trusted procedural language '$lang';" | $pgsql_bin/psql template1
+done
+# create some databases
+try $pgsql_bin/createdb test1
+echo "PostgreSQL installed into $pgsql_path"
+echo "$pgsql_path linked to $pgsql_link"
+try mv $pgsql_conf $pgsql_conf_orig
+try cp $pgsql_conf_orig $pgsql_conf
+echo -n 'Who should we make be PostgreSQL superuser(s)? '
+read users
+for user in $users; do
+	if awk -F: -v "u=$user" '$1==u{x=1}END{exit x}' /etc/passwd
+	then echo "No user $user"
+	else try $pgsql_bin/createuser --superuser $user
+	fi
+done
+echo "Configure $pgsql_conf, etc.  For the Wicci:
+(1) add the Make/wicci1 directory to dynamic_library_path
+(2) symlink the XFiles directory to the PostgreSQL data directory
+Restart the server and Have Fun!"

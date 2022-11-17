@@ -1,0 +1,576 @@
+#!/usr/bin/bash
+
+# Note: =Emacs= =outshine-mode= lets you treat this file as a hierarchical
+# document. TAB on comment lines beginning with asterisks will hide/show nodes
+# much like with =OrgMode=.
+
+# * Install PostgreSQL for the Wicci
+
+# Run script with no arguments for help!
+
+# ** A Few Initial Settings
+
+# stop on command failures or undefined variables
+set -eu
+set -o pipefail                 # capture last non-zero status in pipeline
+# set -vx                         # DEBUG !!
+
+readonly Pgm_Name="${0##*/}"    # Name of this script
+readonly Pgm_Dir="$(realpath "$(dirname "$0")")"
+
+# When --verbose we report the values of global parameters
+# Global variable names will wind up in one of these arrays:
+declare -a Initial_Globals=(Pgm_Name Pgm_Dir)
+declare -a Sussed_Globals
+
+# ** Reporting
+
+# Initial setup reports won't be logged.
+# When we're ready to log, we'll set this:
+declare -g Log_File
+
+# Our reporting context may grow when functions nest.
+# We ignore empty context components.
+join_context() {
+    local result='' delim=''
+    for a; do
+        [ -n "$a" ] && result="$result$delim$a"
+        delim=' '
+    done
+    printf '%s' "$result"
+}
+
+# report_format [FORMAT] [CONTEXT] REPORT...
+# All report messages go through here.
+# Formats should work well with OrgMode.
+# Which do we actually use - can we get rid of any??
+# Hmm, only '-::' and '*' => [*]+ section-heading
+report_format() {
+    local format="$1" context="${2:-}"
+    case "$#" in
+        0) ;;                   # really an error!!
+        1) shift ;;
+        *) shift 2 ;;
+    esac
+    case "$1" in
+        :) printf '%s: %s\n' "$context" "$*" ;;       # unused so far
+        -:) printf '- %s: %s\n' "$context" "$*" ;;    # unused so far
+        -::) printf '- %s :: %s\n' "$context" "$*" ;; # definition list
+        *) printf '%s\n' "$*" ;;                      # anything else
+    esac
+}
+
+# we distinguish exit codes by a trailing !
+# so they can easily be reassigned by a tool
+# get_exit_code FROM_ARG or return default 1
+get_exit_code() {
+    local code got_code
+    code=$(expr "X$1" ~ 'X\([0-9][0-9]*\)!')
+    got_code="$?"               # did $1 match the pattern?
+    printf "%d" "${code:-1}"    # return the code to use
+    exit $got_code              # return whether it was in $1
+}
+
+# report_error [CODE] [CONTEXT] REPORT...
+report_error() {
+    local code
+    code=$(get_exit_code "$1") && shift
+    >&2 report_format '-::'  "$(join_context "$2" error)" "@:3"
+    exit "$code"
+}
+
+# ** Specify Accounts
+
+# Using grep
+# Assumes FILE is Posix /etc/passwd or /etc/group
+# user_group_exists NAME 'user|group' FILE
+user_group_exists() {
+    local context="$Pgm_Name.user_group_exists"
+    grep -qs "^$1:" "$3" || report_error 1! "$context" "No $2 $1"
+    printf '%s' "$1"            # return value
+}
+user_exists() { user_group_exists "$1" 'user' '/etc/passwd'; }
+group_exists() { user_group_exists "$1" 'group' '/etc/group'; }
+
+# The Account and Group which we use to configure and build PostgreSQL
+readonly Build_Acct="$(user_exists bin)"
+readonly Build_Group="$(group_exists bin)"
+# The Account and Group which owns the installed PostgreSQL
+readonly PG_Acct="$(user_exists postgres)"
+readonly PG_Group="$(group_exists postgres)"
+
+Initial_Globals+=(Build_Acct Build_Group PG_Acct PG_Group)
+
+# ** Specify Locations
+
+# What we can know now
+
+readonly Build_Grandparent_Dir=/usr/local/src
+[ -d "$Build_Grandparent_Dir" ] ||
+    report_error 1! Build_GrandParent_Dir expected directory "$Build_GrandParent_Dir"
+
+for d in /usr/local/SW.d /usr/local/SW /usr/local; do
+    [ -d "$d" ] && break
+done
+[ -d "$d" ] || report_error 1! PG_Parent_Dir expected directory "$d"
+readonly PG_Parent_Dir="$d"
+
+Initial_Globals+=(Build_Grandparent_Dir PG_Parent_Dir)
+
+# Functions to figure out the rest once we know the version
+
+# Using ls, grep
+# how can we do this just using bash features??
+empty_dir() { [ -d "$1" ] && ! ls -qAH -- "$1" | grep -q .; }
+
+expect_dir PATH [CODE] [CONTEXT]
+expect_dir() {
+    local dir="$1"; shift
+    [ -d "$dir" ] || report_error "$@" "Expected directory $dir"
+}
+
+# Using mkdir, chown
+# ensure directory exists at PATH or mkdir and chown it
+ensure_dir PATH ACCOUNT GROUP [CODE] [CONTEXT]
+ensure_dir() {
+    local dir="$1" acct="$2" group="$3" code="$4"
+    local context="$(join_context "${$5:-}" ensure_dir)"
+    [ -d "$dir" ] || {
+        [ -e "$dir" ] &&          # whoops, something else there!
+            report_error $(get_exit_code "$code") "$context" "Expected directory $dir"
+        mkdir "$dir"
+        chown "$acct:$group" "$Dir"
+    }
+}
+
+# when we know the version, create the build directories
+suss_build_dirs() {
+    local context=suss_build_dirs
+    declare -gr Project_Name="PostgreSQL-$1"
+    declare -gr Source_Name="{Project_Name,,}" # lower case
+    declare -gr Build_Parent_Dir="$Build_Grandparent_Dir/$Project_Name"
+    ensure_dir "$Build_Parent_Dir" "$Build_Acct" "$Build_Group" 1! $context
+    local n=1 d
+    while d="$Build_Parent_Dir/Attempt-$n" ; ! empty_dir "$d"; do
+        let ++n
+    done
+    declare -gr Build_Dir="$d"
+    ensure_dir "$Build_Dir" "$Build_Acct" "$Build_Group" 1! $context
+    declare -gr Project_Dir="Build_Dir/postgresql-$Version"
+}
+
+Sussed_Globals+=(Build_Parent_Dir Build_Dir)
+
+# when we know the version, create the PG Dirs
+# Initially they'll be owned by the $Build_Acct
+# Later they'll be =chown=ed to the $PG_Acct
+suss_pg_dirs() {
+    declare -gr PG_Dir="$PG_Parent_Dir/pgsql-$1"
+    local n=1 old
+    [ -d "$PG_Dir" ] && ! empty_dir "$PG_Dir" && {
+            while old="$PG_Dir-$n"; [ -d "$old" ]; do
+                let ++n
+            done
+            report_format ::- 'install conflict' mv "$PG_Dir" "$old"
+            mv "$PG_Dir" "$old"
+        }
+    ensure_dir "$PG_Dir" "$Build_Acct" "$Build_Group" 1! suss_install_dir
+    PG_Bin="$PG_Dir/bin"
+    PG_Data="$PG_Dir/data"
+    PG_Log="$PG_Data/logfile"
+    PG_Conf="$PG_Data/postgresql.conf"
+    PG_Conf_Orig="$PG_Conf-$Version"
+}
+
+Sussed_Globals+=(PG_Bin PG_Data PG_Log PG_Conf PG_Conf_Orig)
+
+# ** Specify Programs
+
+# Find the path to a program with fallbacks, or fail
+# prog_path PROGRAM_NAME...
+prog_path() {
+    # set -vx                         # DEBUG !!
+    local prog prog_path='' context="prog_path"
+    for prog; do
+        prog_path="$(type -p "$prog" 2>/dev/null)" && break
+    done
+    [ -n "$prog_path" ] ||
+        report_error 1! "$context"  "No programs $*"
+    printf '%s' "$prog_path"    # function "return value"
+}
+
+# Consider making this a command-line option instead!!
+readonly Build_Shell="$(prog_path dash sh)"
+
+# ** Usage Patterns
+
+# How this script can be used
+
+declare -r Options=('--help' '--dryrun' '--verbose')
+
+declare -rA Patterns=( [help]=0 [tarball]=1 [git-dir]=2 [src-dir]=3 )
+
+# In array Arg_Patterns, note Posix documentation convention
+# of optional arguments in [square brackets]
+declare -ra Arg_Patterns=(
+''
+'PATH-TO-TARBALL [PARENT-INSTALL-DIR]'
+'VERSION POSTGRESQL-GIT-REPOSITORY [PARENT-INSTALL-DIR]'
+'VERSION [PARENT-INSTALL-DIR]'
+)
+declare -ra Arg_Pattern_Explanations=(
+'give help'
+'install context tar archive'
+'install specified version context git repository'
+'install specified version context existing source'
+)
+
+# These three arrays should have the same number of elements
+[ "${#Patterns[@]}" =  "${#Arg_Patterns[@]}" ] ||
+code_error 1 "#Patterns != #Arg_Patterns"
+[ "${#Patterns[@]}" =  "${#Arg_Pattern_Explanations[@]}" ] ||
+code_error 2 "#Patterns != #Arg_Pattern_Explanations"
+
+give_full_help() {
+    local i
+    for i in ${!Arg_Patterns[@]}; do
+        printf '%s %s %s\n\t%s\n' \
+               "$Pgm_Name" "${Options[*]}" "${Arg_Patterns[$i]}" \
+               "${Arg_Pattern_Explanations[$i]}"
+    done
+    printf 'Caveats:\n'
+    printf '\t%s\n' 'Currently needs to run as root.'
+    printf '\t%s\n' 'Unmet dependencies should cause it to abort.'
+    printf '\t%s\n' 'Logs and work done so far left for you to examine.'
+    printf '\t%s\n' 'Too many assumptions for any hard guarantees!'
+    printf '\t%s\n' 'May behave arbitrary badly in unfamiliar environment.'
+}
+
+# ** Process Command Line Options
+
+Dry_Run='false'
+Give_Help='false'
+Verbose='false'
+Pattern='unknown'
+
+Sussed_Globals+=(Pattern Give_Help Dry_Run)
+
+option_arg() {
+    case "$1" in
+        --dryrun) Dry_Run='true' ;;
+        --help) Give_Help='true' ;;
+        --verbose) Verbose='true' ;;
+        *) return 1 ;;
+    esac
+    return 0
+}
+
+# record options and save non-option arguments
+Args=( )                        # Non-Option Args
+for Arg; do
+    option_arg "$Arg" || Args+=("$Arg")
+done
+
+# Reset command line arguments
+set -- "${Args[@]}"             # check this works!
+[ "X${Args[*]}" = "X$*" ] || code_error 3 "Args - foiled again!"
+
+# if no non-option arguments, give full help
+[ ${#Args[@]} -eq 0 ] && { give_full_help; exit 0; }
+# put in the code for targeted help!!
+
+# anything other than help requires root!
+test root = "`whoami`" || report_error 1! "$Pgm_Name" "Must be run as root!"
+
+
+# ** Reporting Parameter Values
+
+report_param() {
+    local -n v="$1"
+    printf -- '%s = %s\n' "$1" "$v"
+}
+
+report_params() {
+    local p; for p; do report_param "$p"; done
+}
+
+$Verbose && {
+    report_params "${Initial_Globals[@]}"
+    report_format -:: 'Arguments' "${Args[*]}"
+}
+
+# Sussed_Globals can be reported later
+
+# ** Determine Argument Patterns and Finalize Globals
+
+# *** tarball pattern
+
+try_tarball() {
+#   set -vx                  # debug temp!!!
+    local context='try_tarball'
+    [ $# -gt 0 ] && [ $# -le 2 ] || return 1
+    [ -f "$1" ] || return 1
+    [ $# -eq 1 ] || expect_dir "$2" 1! "$context"
+    local f1=${1##*/} # without the path
+    local f2=${f1%.*} # without last extension
+    local f           # trial project name
+    case "$f1" in
+        (*.tar) f=$f2 ;;
+        (*.tar.*) f=${f2%.*} ;;
+        (*) return 1;;
+    esac
+    declare -gr Pattern='tarball' # commit to pattern
+    # further deviations will be errors
+    local v=${f##*-}            # trial version string
+    local regexp_pattern='[1-9][0-9]?.[0-9][0-9]?(rc)?'
+    [[ "$v" =~ $regexp_pattern ]] ||
+        report_error 5! "$context" "unknown version pattern in $f"
+    # We're satisfied, so
+    Archive=$(realpath "$1")
+    Sussed_Globals+=(Archive)
+    Version="$v"
+    Project="$f"
+    [ $# = 2 ] && Build_Grandparent_Dir="$(realpath "$2")"
+    expect_dir "$Build_Grandparent_Dir" ] 5! \
+           "$(context_join "$context" Build_Grandparent_Dir)"
+    return 0
+}
+
+# *** other patterns
+
+try_version_git() {
+    local context='try_version_git'
+    Pattern='tarball'
+    context_level_report "$context" apology "$Pattern pattern not yet implemented"
+    return 1
+}
+
+try_bare_version() {
+    local context='try_bare_version'
+    Pattern='version'
+    context_level_report "$context" apology "$Pattern pattern not yet implemented"
+    return 1
+}
+
+# *** determine install pattern
+
+try_tarball "$@" || try_version_git "$@" || try_bare_version "$@" ||
+    report_error !6 'unrecognized install pattern'
+
+[ -n "$Version" ] || report_error 1! 'install pattern' "Don't have a version"
+Sussed_Globals+=(Version)
+
+suss_build_dirs "$Version"
+suss_pg_dirs "$Version"
+
+# *** Try to find tcl library
+
+for tcl in /usr/{lib,lib64}{,/tcl*}/tclConfig.sh; do
+    [ -f "$tcl" ] && break
+done
+if [ -f "${tcl:-}" ]; then
+    with_tcl="--with-tclconfig=${tcl%/*}"
+else
+    with_tcl=''
+    level_report warning "Can't find tcl, will proceed without it!!"
+fi
+
+# ** Prepare, Configure, Build, Install
+
+$Verbose && report_params "${Sussed_Globals[@]}"
+# set -xv
+
+# *** Prepare Build Directory
+
+case "$Pattern" in
+    (tarball)
+        declare -g Source_Dir="$Build_Parent_Dir/$Source_Name"
+        [ -d "$Source_Dir" ] || {
+            ensure_dir "$Build_Parent_Dir" "$Build_Acct" "$Build_Group" 1! tarball
+            tar xf - -C "$Build_Parent_Dir" "$Archive" ||
+                report_error 1! tarball "Can't extract $Archive"
+            expect_dir "$Source_Dir" 1! Source_Dir
+        }
+        tar cf - -C "Build_Parent_Dir" "$Source_Name" | tar xf - -C "$Build_Dir"
+        chown -R "$Build_Acct:$Build_Group" "$Build_Dir"
+        ;;
+    (*) report_error 1! $Pattern "unimplemented pattern" ;;
+esac
+
+# *** Logging Functions
+
+set_phase() {
+    declare -g Phase="$1"
+    declare -g Log_File="$Build_Dir/LOG_$Phase.org"
+    touch "$Log_File"
+    chown -R "$Build_Acct:$Build_Group" "$Log_File"
+    { printf -- '%s -*- mode: %s; -*-\n' '' Org
+      printf -- '#+%s: %s\n' TITLE 'PostgreSQL for Wicci Installation Log'
+      printf -- '#+%s: %s\n' DATE "$(date)"
+      printf -- '* Phase %s\n' "$Phase"
+    } >> "$Log_File"
+    report_format "** Phase $Phase"
+}
+
+# Using awk
+# log stdin content, if any, as an OrgMode example block
+log_example() {
+    awk -v b='#+begin_example' -v e='#+end_example' \
+        'NR==1{print b}NR>0{print}END{if (NR>0) print e}' | tee -a "$Log_File"
+}
+
+log_report() {
+    report_format "$@" | tee -a "$Log_File"
+}
+
+# report_error [CODE] [CONTEXT] REPORT...
+log_error() {
+    local code
+    code=$(get_exit_code "$1") && shift
+    report_format '-::'  "$(join_context "$2" error)" "@:3" >> "$Log_File"
+    exit "$code"
+}
+
+# *** Phase CONFIG
+
+set_phase CONFIG
+
+Source_Root="$Build_Dir/$Source_Name"
+expect_dir "$Source_Root" 5! Source_Root
+
+Config_Options=(
+    --with-libxml
+    --with-libxslt
+    --enable-debug
+    --enable-cassert
+    $with_tcl                   # don't quote!
+    --prefix="$PG_Dir"
+)
+
+$Verbose && report_param Config_Options
+
+log_report '-::' "$Source_Root ./configure" "${Config_Options[*]}"
+su - "$Build_Acct" -c "cd \"$Source_Root\"; ./configure ${Config_Options[*]}" |
+    log_example || log_error 1! $Phase "Build status $?"
+
+# *** Phases BUILD and INSTALL
+
+set_phase BUILD
+
+su - "$Build_Acct" -c "cd \"$Source_Root\"; make" |
+    log_example || log_error 1! $Phase "Build status $?"
+
+set_phase INSTALL
+
+
+
+su - "$Build_Acct" -c "cd \"$Source_Root\"; make install" |
+    log_example || log_error 1! $Phase "Build status $?"
+
+# *** BUILD and INSTALL Some Contributed Modules
+
+readonly Contrib_Dir="$Source_Root/contrib"
+cd "$Contrib_Dir" || report_error 28! "Can't cd to $Contrib_Dir"
+
+for d in xml2 intarray citext hstore; do
+	(
+      set_phase $d-BUILD
+      su - "$Build_Acct" -c "cd \"$Contrib_Dir\"; make" |
+          log_example || report_error 1! $Phase "Build status $?"
+
+      set_phase $d-INSTALL
+      su - "$Build_Acct" -c "cd \"$Contrib_Dir\"; make install" |
+          log_example || report_error 1! $Phase "Build status $?"
+  )
+done
+
+# ** Setting Up Postgres
+# *** Procedures to run as Postgres
+
+pg_cmd() {
+    log_report - "$*"
+    su - "$PG_Acct" -c "cd \"$PG_Dir\"; bin/$*" | log_example
+}
+
+pg_data_cmd() {
+    local cmd="$1"; shift
+    pg_cmd "$cmd" -D "$PG_Data" "$@"
+}
+
+try() {
+    log_report -:: "$@"
+    local code="$1"; shift
+    "$@" | log_example || report_error "$code" "$Phase $1" "status $?"
+}
+
+set_phase POSTGRES
+
+*** Initializing Postgres
+
+try !1 mkdir -p "$PG_Data"
+try !1 empty_dir "$PG_Data"
+try !1 chmod 700 "$PG_Data"
+try !1 chown -R "$PG_Acct:$PG_Group" "$PG_Dir"
+
+# initialize the PostgreSQL system
+pg_data_cmd 32 "$context" initdb ||
+    report_error !1 initdb "status $?"
+
+*** Starting the Server
+
+declare PG_Problem_Count=0
+
+# Check if there's an existing PostgreSQL running
+# and do something appropriate if there is!!
+
+# start the PostgreSQL server
+pg_data_cmd 33! pg_ctl -l "$PG_Log" start ||
+    report_error !1 'starting server' "status $?"
+sleep 5	# seems to need a moment to get ready
+
+*** Configuring PostgreSQL
+
+# add additional languages to database template1
+Langs="pltcl"
+for lang in "$Langs"; do
+	# try $PG_Bin/createlang "$lang" template1
+	printf "create trusted procedural language '%s';\n" "$lang" |
+      pg_cmd psql -a template1 || {
+            report_format -:: "createlang $lang" "status $?"
+            let ++PG_Problem_Count
+      }
+done
+
+# maybe create some databases
+[ "$PG_Problem_Count" -eq 0 ] ||
+    for db in wicci1
+    do
+        pg_cmd createdb "$db" || {
+            report_format -:: "createdb $db" "status $?"
+            let ++PG_Problem_Count
+        }
+    done
+
+pg_cmd mv "$PG_Conf" "$PG_Conf_Orig" ||
+    report_format -:: "${PG_Conf##*/}" "status $?"
+pg_cmd cp "$PG_Conf_Orig" "$PG_Conf" ||
+    report_format -:: "${PG_Conf##*/}" "status $?"
+
+# create some PostgreSQL superusers
+# these should really come context the command line!!
+# perhaps defaulting to the real-user-id
+
+echo -n 'Who should we make be PostgreSQL superuser(s)? '
+read users
+for user in $users; do
+    user_exists "$user" &&
+    pg_cmd 38! createuser --superuser $user ||
+        report_format -:: "createuser $user" "status $?"
+done
+
+# Automate these things, please!!
+
+echo "Configure $PG_Conf, etc.  For the Wicci:
+(1) add the Make/wicci1 directory to dynamic_library_path
+(2) symlink the XFiles directory to the PostgreSQL data directory
+Restart the server and Have Fun!"

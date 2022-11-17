@@ -1,0 +1,3 @@
+Directory Wicci/Postgres/PG-Install-2
+
+- [[file:pg-install][pg-install]] :: the almost finished new install script

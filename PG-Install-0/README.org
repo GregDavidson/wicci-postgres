@@ -1,0 +1,12 @@
+* Directory Wicci/Postgres/PG-Install-0
+
+These are the scripts which I've used successfully for many years,
+but they have often required manual tweaks after changes to PostgreSQL or
+to my installation platform.
+
+- [[file:pgsql-install-as-postgres][pgsql-install-as-postgres]] :: used by the other scripts, runs as postgres
+- [[file:pgsql-install-tarball][pgsql-install-tarball]] :: the script I've used the most
+- [[file:pgsql-install-git][pgsql-install-git]] :: a script I used once, caveat user
+- [[file:pgsql-install-sans-tar][pgsql-install-sans-tar]] :: a script I used once, caveat user
+- [[file:pgsql-remove][pgsql-remove]] :: check before using
+- [[file:pgsql-uninstall][pgsql-uninstall]] ::check before using

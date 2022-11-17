@@ -1,4 +1,5 @@
 * Scripts for PostgreSQL Source Install for the Wicci
+
 These scripts attempt to install PostgreSQL from source with the customizations
 desired for the Wicci System. These scripts may fail
 - with a new version of PostgreSQL
@@ -10,13 +11,17 @@ desired for the Wicci System. These scripts may fail
 Therefore, these scripts
 - Allow for multiple attempts
 - Divide up the stages of each attempt
-- Make lots of careful tests
-- Stop as soon as anything fails
-- Generate good transcripts and reports
+- Make lots of tests
+- Stop as soon as anything important fails
+- Generate logs and reports
 
-Under Construction:
-- [[file:pg-install][pg-install]] :: attempt to configure, build, install PostgreSQL
+The oldest generation is the most stable despite being fragile.
 
-Next Scripts to Write
-- [[file:pg-fetch-tarball][pg-fetch-tarball]] :: download and check PostgreSQL source tarball
-- [[file:pg-clone-git][pg-clone-git]] :: download PostgreSQL git repository
+The latest attempt looks promising and it's not quite ready for use.
+
+There have been three generations of scripts for this purpose!
+- [[File:PG-Install][PG-Install]] :: links to the latest version
+- [[file:PG-Install-0][PG-Install-0]] :: the oldest scripts
+- [[file:PG-Install-1][PG-Install-1]] :: the first attempt at an all-in-one script
+- [[file:PG-Install-2][PG-Install-2]] :: the latest attempt at an all-in-one script
+- [[File:Doc][Doc]] :: some documentation regarding this task

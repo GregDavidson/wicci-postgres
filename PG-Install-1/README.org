@@ -1,0 +1,7 @@
+* Directory Wicci/Postgres/PG-Install-1
+
+This was my first attempt at a 1-file script.
+
+- [[file:pg-install][pg-install]] :: the almost finished, but way too complex script
+- [[file:pg-cleanup][pg-cleanup]] :: don't use!
+- [[file:pg-show][pg-show]] :: shows what's been done

@@ -1,0 +1,52 @@
+#!/bin/dash
+PgmName="${0##*/}"
+
+usage="$PgmName textfile..."
+purpose='renumber exit-codes and line-numbers in source file lines
+- we only change non-zero exit-codes
+- exit-codes should be sequential starting with 10
+- line-numbers are the line numbers of the lines of the source file'
+limitations='only one pair of substitutions will be done for any line
+substitutions will only occur with two patterns
+- "`cr [1-9][0-9]* [1-9][0-9]*
+- "`cs [^ ]+ [1-9][0-9]* [1-9][0-9]*
+where the digits strings are
+- first digit-string is the exit-code
+- second digit-string is the line-number'
+
+[ $# -eq 0 ] && {
+    printf "* Usage:\n%s\n" "$usage"
+    printf "* Purpose:\n%s\n" "$purpose"
+    printf "* Limitations:\n%s\n" "$limitations"
+    exit 0
+}
+
+for f; do
+    [ -f "$f" ] || {
+        echo "$PgmName warning: Skipping non-file argument $f"
+        continue
+    }
+    {
+awk 'BEGIN {
+    code=10
+# each pattern has 5 parts
+# the exit-code is part 2
+# the line-number is part 4
+    cr="(.*\"`cr *)([1-9][0-9]*)( +)([1-9][0-9]*)(.*)"
+    cs="(.*\"`cs *[^ ]+ *)([1-9][0-9]*)( +)([1-9][0-9]*)(.*)"
+}
+{line=$0}
+line ~ cr {
+    line=gensub(cr, "\\1" code++ "\\3\\4\\5", "1", line)
+    line=gensub(cr, "\\1\\2\\3" NR "\\5", "1", line)
+}
+line ~ cs {
+    line=gensub(cs, "\\1" code++ "\\3\\4\\5", "1", line)
+    line=gensub(cs, "\\1\\2\\3" NR "\\5", "1", line)
+}
+{print line}' "$f" >"$f.$$" && mv --backup=numbered "$f.$$" "$f"
+} || {
+        echo "$PgmName warning: Something went wrong processing $f"
+        continue
+}
+done

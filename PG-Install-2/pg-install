@@ -126,11 +126,11 @@ do_suss_accounts() {
     local this=do_suss_accounts
 
     # The Account and Group which we use to configure and build PostgreSQL
-    declare -gr Build_Acct="$(user_exists bin "`cr 1 1 $this`")"
-    declare -gr Build_Group="$(group_exists bin "`cr 1 1 $this`")"
+    declare -gr Build_Acct="$(user_exists bin "`cr 10 129 $this`")"
+    declare -gr Build_Group="$(group_exists bin "`cr 11 130 $this`")"
     # The Account and Group which owns the installed PostgreSQL
-    declare -gr PG_Acct="$(user_exists postgres "`cr 1 1 $this`")"
-    declare -gr PG_Group="$(group_exists postgres "`cr 1 1 $this`")"
+    declare -gr PG_Acct="$(user_exists postgres "`cr 12 132 $this`")"
+    declare -gr PG_Group="$(group_exists postgres "`cr 13 133 $this`")"
 
     Initial_Globals+=(Build_Acct Build_Group PG_Acct PG_Group)
 }
@@ -142,12 +142,12 @@ do_suss_locations() {
 
     declare -gr Build_Grandparent_Dir=/usr/local/src
     [ -d "$Build_Grandparent_Dir" ] ||
-        error "`cr 1 1 $this`" expected directory "$Build_GrandParent_Dir"
+        error "`cr 14 145 $this`" expected directory "$Build_GrandParent_Dir"
 
     for d in /usr/local/SW.d /usr/local/SW /usr/local; do
         [ -d "$d" ] && break
     done
-    [ -d "$d" ] || error "`cr 1 1 $this`" "expected PG_Parent_Dir $d"
+    [ -d "$d" ] || error "`cr 15 150 $this`" "expected PG_Parent_Dir $d"
     declare -gr PG_Parent_Dir="$d"
 
     Initial_Globals+=(Build_Grandparent_Dir PG_Parent_Dir)
@@ -183,13 +183,13 @@ do_suss_build_dirs() {
     declare -gr Project_Name="PostgreSQL-$1"
     declare -gr Source_Name="{Project_Name,,}" # lower case
     declare -gr Build_Parent_Dir="$Build_Grandparent_Dir/$Project_Name"
-    ensure_dir "$Build_Parent_Dir" "$Build_Acct" "$Build_Group" "`cr 1 1 $this`"
+    ensure_dir "$Build_Parent_Dir" "$Build_Acct" "$Build_Group" "`cr 16 186 $this`"
     local n=1 d
     while d="$Build_Parent_Dir/Attempt-$n" ; ! empty_dir "$d"; do
         let ++n
     done
     declare -gr Build_Dir="$d"
-    ensure_dir "$Build_Dir" "$Build_Acct" "$Build_Group" "`cr 1 1 suss_build_dirs`"
+    ensure_dir "$Build_Dir" "$Build_Acct" "$Build_Group" "`cr 17 192 suss_build_dirs`"
 }
 
 Sussed_Globals+=(Build_Parent_Dir Build_Dir)
@@ -205,7 +205,7 @@ do_suss_pg_dirs() {
             while old="$PG_Dir-$n"; [ -d "$old" ]; do
                 let ++n
             done
-            report "`cr 1 1 $this`" 'install conflict' mv "$PG_Dir" "$old"
+            report "`cr 18 208 $this`" 'install conflict' mv "$PG_Dir" "$old"
             mv "$PG_Dir" "$old"
         }
     ensure_dir "$PG_Dir" "$Build_Acct" "$Build_Group" 1! suss_install_dir
@@ -258,9 +258,9 @@ declare -ra Arg_Pattern_Explanations=(
 
 # These three arrays should have the same number of elements
 [ "${#Patterns[@]}" =  "${#Arg_Patterns[@]}" ] ||
-    error "`cr 1 1 "$Pgm_Name"`" "#Patterns != #Arg_Patterns"
+    error "`cr 19 261 "$Pgm_Name"`" "#Patterns != #Arg_Patterns"
 [ "${#Patterns[@]}" =  "${#Arg_Pattern_Explanations[@]}" ] ||
-    error "`cr 1 1 "$Pgm_Name"`" "#Patterns != #Arg_Pattern_Explanations"
+    error "`cr 20 263 "$Pgm_Name"`" "#Patterns != #Arg_Pattern_Explanations"
 
 give_full_help() {
     local i
@@ -299,7 +299,7 @@ do_suss_options() {
     # Consider making this a command-line option instead!!
     declare -gr Build_Shell;
     Build_Shell="$(try_find_prog_path dash sh)" ||
-        error "`cr 1 1 $this`" "can't suss Build_Shell"
+        error "`cr 21 302 $this`" "can't suss Build_Shell"
 
     Sussed_Globals+=(Pattern Give_Help Dry_Run Build_Shell)
 
@@ -327,7 +327,7 @@ report_params() {
 
 $Verbose && {
     report_params "${Initial_Globals[@]}"
-    report "`cr 1 1`" 'Arguments' "${Pgm_Args[*]}"
+    report "`cr 22 330`" 'Arguments' "${Pgm_Args[*]}"
 }
 
 # Sussed_Globals can be reported later
@@ -341,7 +341,7 @@ try_tarball() {
     local this='try_tarball'
     [ $# -gt 0 ] && [ $# -le 2 ] || return 1
     [ -f "$1" ] || return 1
-    [ $# -eq 1 ] || expect_dir "$2" "`cr 1 1 $this`"
+    [ $# -eq 1 ] || expect_dir "$2" "`cr 23 344 $this`"
     local f1=${1##*/} # without the path
     local f2=${f1%.*} # without last extension
     local f           # trial project name
@@ -355,14 +355,14 @@ try_tarball() {
     local v=${f##*-}            # trial version string
     local regexp_pattern='[1-9][0-9]?.[0-9][0-9]?(rc)?'
     [[ "$v" =~ $regexp_pattern ]] ||
-        error "`cr 1 1 $this`" "unknown version pattern in $f"
+        error "`cr 24 358 $this`" "unknown version pattern in $f"
     # We're satisfied, so
     Archive=$(realpath "$1")
     Sussed_Globals+=(Archive)
     Version="$v"
     Sussed_Globals+=(Version)
     [ $# = 2 ] && Build_Grandparent_Dir="$(realpath "$2")"
-    expect_dir "$Build_Grandparent_Dir" "`cr 1 1 $this`"
+    expect_dir "$Build_Grandparent_Dir" "`cr 25 365 $this`"
     return 0
 }
 
@@ -371,14 +371,14 @@ try_tarball() {
 try_version_git() {
     local this='try_version_git'
     Pattern='tarball'
-    context_level_report "`cr 1 1 $this`" apology "$Pattern pattern not yet implemented"
+    context_level_report "`cr 26 374 $this`" apology "$Pattern pattern not yet implemented"
     return 1
 }
 
 try_bare_version() {
     local this='try_bare_version'
     Pattern='version'
-    context_level_report "`cr 1 1 $this`" apology "$Pattern pattern not yet implemented"
+    context_level_report "`cr 27 381 $this`" apology "$Pattern pattern not yet implemented"
     return 1
 }
 
@@ -388,10 +388,10 @@ do_suss_args() {
     local this=do_suss_args
 
     try_tarball "$@" || try_version_git "$@" || try_bare_version "$@" ||
-        error "`cr 1 1 $this`" 'unrecognized install pattern'
+        error "`cr 28 391 $this`" 'unrecognized install pattern'
 
     [ -n "$Version" ] ||
-        error "`cr 1 1 $this`" "Failed to suss a version"
+        error "`cr 29 394 $this`" "Failed to suss a version"
     Sussed_Globals+=(Version)
 }
 
@@ -407,7 +407,7 @@ do_try_find_tcl() {
         with_tcl="--with-tclconfig=${tcl%/*}"
     else
         with_tcl=''
-        report -warning "`cr 1 1 $this`" "Can't find tcl, will proceed without it!!"
+        report -warning "`cr 30 410 $this`" "Can't find tcl, will proceed without it!!"
     fi
 }
 
@@ -426,15 +426,15 @@ do_prepare_build_dir() {
         (tarball)
         declare -g Source_Dir="$Build_Parent_Dir/$Source_Name"
         [ -d "$Source_Dir" ] || {
-            ensure_dir "$Build_Parent_Dir" "$Build_Acct" "$Build_Group" "`cr 1 1 $this`"
+            ensure_dir "$Build_Parent_Dir" "$Build_Acct" "$Build_Group" "`cr 31 429 $this`"
             tar xf - -C "$Build_Parent_Dir" "$Archive" ||
-                error "`cr 1 1 $this`" "Can't extract $Archive"
-            expect_dir "$Source_Dir" "`cr 1 1 $this`"
+                error "`cr 32 431 $this`" "Can't extract $Archive"
+            expect_dir "$Source_Dir" "`cr 33 432 $this`"
         }
         tar cf - -C "Build_Parent_Dir" "$Source_Name" | tar xf - -C "$Build_Dir"
         chown -R "$Build_Acct:$Build_Group" "$Build_Dir"
         ;;
-        (*) error "`cr 1 1 $this`" "unimplemented pattern $Pattern" ;;
+        (*) error "`cr 34 437 $this`" "unimplemented pattern $Pattern" ;;
     esac
 }
 
@@ -480,7 +480,7 @@ do_config() {
     set_phase CONFIG
 
     declare -g Source_Root="$Build_Dir/$Source_Name"
-    expect_dir "$Source_Root" "`cr 1 1 $this`" Source_Root
+    expect_dir "$Source_Root" "`cr 35 483 $this`" Source_Root
 
     declare -g Config_Options=(
         --with-libxml
@@ -495,7 +495,7 @@ do_config() {
 
     log_report '-::' "$Source_Root ./configure" "${Config_Options[*]}"
     su - "$Build_Acct" -s "$Build_Shell" -c "cd \"$Source_Root\"; ./configure ${Config_Options[*]}" |
-        log_example || log_error "`cr 1 1 $this`" "Build status $?"
+        log_example || log_error "`cr 36 498 $this`" "Build status $?"
 }
 
 # *** Phases BUILD and INSTALL
@@ -506,7 +506,7 @@ do_build() {
     set_phase BUILD
 
     su - "$Build_Acct" -s "$Build_Shell" -c "cd \"$Source_Root\"; make" |
-        log_example || log_error "`cr 1 1 $this`" "Build status $?"
+        log_example || log_error "`cr 37 509 $this`" "Build status $?"
 }
 
 do_install() {
@@ -515,7 +515,7 @@ do_install() {
     set_phase INSTALL
 
     su - "$Build_Acct" -s "$Build_Shell" -c "cd \"$Source_Root\"; make install" |
-        log_example || log_error "`cr 1 1 $this`" "Build status $?"
+        log_example || log_error "`cr 38 518 $this`" "Build status $?"
 }
 
 # *** BUILD and INSTALL Some Contributed Modules
@@ -524,17 +524,17 @@ do_build_install_contribs() {
     local d this=do_build_install_contribs
 
     readonly Contrib_Dir="$Source_Root/contrib"
-    expect_dir "$Contrib_Dir" "`cr 1 1 $this`"
+    expect_dir "$Contrib_Dir" "`cr 39 527 $this`"
 
     for d in xml2 intarray citext hstore
     do
         set_phase $d-BUILD
         su - "$Build_Acct" -s "$Build_Shell" -c "cd \"$Contrib_Dir\"; make" |
-            log_example || error "`cr 1 1 $this`" "Build status $?"
+            log_example || error "`cr 40 533 $this`" "Build status $?"
 
         set_phase $d-INSTALL
         su - "$Build_Acct" -s "$Build_Shell" -c "cd \"$Contrib_Dir\"; make install" |
-            log_example || error "`cr 1 1 $this`" "Build status $?"
+            log_example || error "`cr 41 537 $this`" "Build status $?"
     done
 }
 
@@ -565,10 +565,10 @@ do_init_pg() {
     try !1 empty_dir "$PG_Data"
     try !1 chmod 700 "$PG_Data"
     try !1 chown -R "$PG_Acct:$PG_Group" "$PG_Dir"
-    pg_data_cmd "`cr 1 1 $this`" initdb ||
+    pg_data_cmd "`cr 42 568 $this`" initdb ||
         error !1 initdb "status $?"
     # we should take care of this: !!
-    report "`cr 1 1 $this`" "-remember to" \
+    report "`cr 43 571 $this`" "-remember to" \
            "ln -s XFiles directory to $PG_Data"
 }
 
@@ -581,7 +581,7 @@ do_start_pg() {
 
     # start the PostgreSQL server
     pg_data_cmd 33! pg_ctl -l "$PG_Log" start ||
-        error "`cr 1 1 $this`" "starting server -> status $?"
+        error "`cr 44 584 $this`" "starting server -> status $?"
     sleep 5	# seems to need a moment to get ready
 }
 
@@ -596,7 +596,7 @@ do_add_langs() {
         # try $PG_Bin/createlang "$lang" template1
         printf "create trusted procedural language '%s';\n" "$lang" |
             pg_cmd psql -a template1 || {
-            report "`cr 1 1 $this`" "createlang $lang -> status $?"
+            report "`cr 45 599 $this`" "createlang $lang -> status $?"
             let ++PG_Problem_Count
         }
     done
@@ -608,7 +608,7 @@ do_create_databases() {
     for db in wicci1
     do
         pg_cmd createdb "$db" || {
-            report "`cr 1 1 $this`" "createdb $db -> status $?"
+            report "`cr 46 611 $this`" "createdb $db -> status $?"
             let ++PG_Problem_Count
         }
     done
@@ -617,11 +617,11 @@ do_create_databases() {
 do_manage_pg_config_file() {
     local this=do_manage_pg_config_file
     pg_cmd mv "$PG_Conf" "$PG_Conf_Orig" ||
-        report "`cr 1 1 $this`" "${PG_Conf##*/} -> status $?"
+        report "`cr 47 620 $this`" "${PG_Conf##*/} -> status $?"
     pg_cmd cp "$PG_Conf_Orig" "$PG_Conf" ||
-        report "`cr 1 1 $this`" "${PG_Conf##*/} -> status $?"
+        report "`cr 48 622 $this`" "${PG_Conf##*/} -> status $?"
     # we should take care of this: !!
-    report "`cr 1 1 $this`" '-remember to' \
+    report "`cr 49 624 $this`" '-remember to' \
            'add Make/wicci1 to dynamic_library_path'
     # and any other typical changes
 }
@@ -636,7 +636,7 @@ do_create_superusers() {
     read users -r
     for user in $users; do
         { user_exists "$user" && pg_cmd createuser --superuser "$user"; } ||
-                report "`cr 1 1 $this`" "createuser $user -> status $?"
+                report "`cr 50 639 $this`" "createuser $user -> status $?"
     done
 }
 
@@ -651,7 +651,7 @@ do_suss_pg_dirs "$Version"
 
 do_suss_options "$@"
 set -- "${Pgm_Args[@]}"
-test root = "`whoami`" || error "`cr 1 1 "$Pgm_Name"`" "Must run as root!"
+test root = "`whoami`" || error "`cr 51 654 "$Pgm_Name"`" "Must run as root!"
 do_suss_args "$@"
 
 do_try_find_tcl

@@ -1,3 +1,6 @@
 Directory Wicci/Postgres/PG-Install-2
 
+Run them with no arguments to get help:
+
 - [[file:pg-install][pg-install]] :: the almost finished new install script
+- [[file:renumber][renumber]] :: the renumbering script

@@ -15,7 +15,9 @@
 # exit on command failures
 # commented out as some of our functions "fail"
 # research this as it would be nice to reinstate this protection!
-# possibly just need some strategic last statements of return 0
+# possibly just need some strategic
+# - add last statement: return 0
+# - add trailing: || true
 # set -e
 # exit when referencing undefined variables
 set -u
@@ -89,7 +91,7 @@ cs_code() {
 report_out() {
     local level='' context='' format='' cxt
     # get the level, if any
-    [[ "X$1" =~ ^X-[A-Za-z]+$ ]] && {
+    [[ "X$1" =~ ^X-[[:alpha:]]+$ ]] && {
         level="${1#-}" ; shift  # dropping the initial -
     }
     # get the context, if any
@@ -147,6 +149,7 @@ report_params() {
     local p; for p; do report_param "$p"; done
 }
 
+# logging issue!!!
 set_param() {
     { [ $# -ge 1 ] && [ $# -le 2 ]; } ||
         error 'set_param' "expected $# arguments"
@@ -163,7 +166,7 @@ set_final() {
     declare -gr "$1"
 }
 
-# ** Specify Accounts
+# ** Specify Accounts and Locations
 
 # Using grep
 # Assumes FILE is Posix /etc/passwd or /etc/group
@@ -180,30 +183,28 @@ do_suss_accounts() {
     local this=do_suss_accounts
 
     # The Account and Group which we use to configure and build PostgreSQL
-    set_final Build_Acct "$(user_exists bin "`cr 10 183 $this`")"
-    set_final Build_Group "$(group_exists bin "`cr 11 184 $this`")"
+    set_final Build_Acct "$(user_exists bin "`cr 10 186 $this`")"
+    set_final Build_Group "$(group_exists bin "`cr 11 187 $this`")"
     # The Account and Group which owns the installed PostgreSQL
-    set_final PG_Acct "$(user_exists postgres "`cr 12 186 $this`")"
-    set_final PG_Group "$(group_exists postgres "`cr 13 187 $this`")"
+    set_final PG_Acct "$(user_exists postgres "`cr 12 189 $this`")"
+    set_final PG_Group "$(group_exists postgres "`cr 13 190 $this`")"
 }
-
-# ** Specify Locations
 
 do_suss_locations() {
     local this=do_suss_locations
 
     set_final Build_Grandparent_Dir /usr/local/src
     [ -d "$Build_Grandparent_Dir" ] ||
-        error "`cr 14 197 $this`" expected directory "$Build_Grandparent_Dir"
+        error "`cr 14 198 $this`" expected directory "$Build_Grandparent_Dir"
 
     for d in /usr/local/SW.d /usr/local/SW /usr/local; do
         [ -d "$d" ] && break
     done
-    [ -d "$d" ] || error "`cr 15 202 $this`" "expected PG_Parent_Dir $d"
+    [ -d "$d" ] || error "`cr 15 203 $this`" "expected PG_Parent_Dir $d"
     set_final PG_Parent_Dir "$d"
 }
 
-# Functions to figure out the rest once we know the version
+# ** Given Version, Specify Build and PG Dirs
 
 # Using ls, grep
 # empty_dir() { ! [ -e "$1" ] || [ -d "$1"] && ! ls -qAH -- "$1" | grep -q .; }
@@ -221,33 +222,38 @@ expect_dir() {
 # ensure directory exists at PATH or mkdir and chown it
 # ensure_dir PATH ACCOUNT GROUP [CONTEXT]
 ensure_dir() {
+    local this=ensure_dir
     local dir="$1" acct="$2" group="$3" cs_="${4:-}"
     [ -d "$dir" ] || {
         [ -e "$dir" ] &&          # whoops, something else there!
             error "$cs_" "Expected directory $dir"
+        report -command "`cs "$cs_" 16 230 $this`" mkdir -p "$dir"
         mkdir "$dir"
+        report -command "`cs "$cs_" 17 232 $this`" chown "$acct:$group" "$dir"
         chown "$acct:$group" "$dir"
     }
 }
 
 # when we know the version, create the build directories
+# do_suss_build_dirs VERSION
 do_suss_build_dirs() {
     local this=do_suss_build_dirs
     set_final Project_Name "PostgreSQL-$1"
     set_final Source_Name "${Project_Name,,}" # lower case
     set_final Build_Parent_Dir "$Build_Grandparent_Dir/$Project_Name"
-    ensure_dir "$Build_Parent_Dir" "$Build_Acct" "$Build_Group" "`cr 16 239 $this`"
+    ensure_dir "$Build_Parent_Dir" "$Build_Acct" "$Build_Group" "`cr 18 244 $this`"
     local n=1 d
     while d="$Build_Parent_Dir/Attempt-$n" ; ! empty_dir "$d"; do
         let ++n
     done
     set_final Build_Dir "$d"
-    ensure_dir "$Build_Dir" "$Build_Acct" "$Build_Group" "`cr 17 245 suss_build_dirs`"
+    ensure_dir "$Build_Dir" "$Build_Acct" "$Build_Group" "`cr 19 250 suss_build_dirs`"
 }
 
 # when we know the version, create the PG Dirs
 # Initially they'll be owned by the $Build_Acct
 # Later they'll be =chown=ed to the $PG_Acct
+# do_suss_pg_dirs VERSION
 do_suss_pg_dirs() {
     local this=do_suss_pg_dirs
     set_final PG_Dir "$PG_Parent_Dir/pgsql-$1"
@@ -256,30 +262,15 @@ do_suss_pg_dirs() {
             while old="$PG_Dir-$n"; [ -d "$old" ]; do
                 let ++n
             done
-            report "`cr 18 259 $this`" 'install conflict' mv "$PG_Dir" "$old"
+            report "`cr 20 265 $this`" 'install conflict' mv "$PG_Dir" "$old"
             mv "$PG_Dir" "$old"
         }
-    ensure_dir "$PG_Dir" "$Build_Acct" "$Build_Group" "`cr 19 262 $this`"
+    ensure_dir "$PG_Dir" "$Build_Acct" "$Build_Group" "`cr 21 268 $this`"
     set_final PG_Bin "$PG_Dir/bin"
     set_final PG_Data "$PG_Dir/data"
     set_final PG_Log "$PG_Data/logfile"
     set_final PG_Conf "$PG_Data/postgresql.conf"
     set_final PG_Conf_Orig "$PG_Conf-$Version"
-}
-
-
-# ** Specify Programs
-
-# Find the path to a program with fallbacks, or fail
-# try_find_prog_path PROGRAM_NAME...
-try_find_prog_path() {
-    # set -vx                         # DEBUG !!
-    local prog prog_path=''
-    for prog; do
-        prog_path="$(type -p "$prog" 2>/dev/null)" && break
-    done
-    [ -n "$prog_path" ] ||      # exit status of 0 or 1
-        printf -- '%s' "$prog_path" # exit status 0=true
 }
 
 # ** Usage Patterns
@@ -300,16 +291,16 @@ declare -ra Arg_Patterns=(
 )
 declare -ra Arg_Pattern_Explanations=(
 'give help'
-'install context tar archive'
-'install specified version context git repository'
-'install specified version context existing source'
+'install from tar archive'
+'install specified version from git repository'
+'install specified version from existing source'
 )
 
 # These three arrays should have the same number of elements
 [ "${#Patterns[@]}" =  "${#Arg_Patterns[@]}" ] ||
-    error "`cr 20 310 "$Pgm_Name"`" "#Patterns != #Arg_Patterns"
+    error "`cr 22 301 "$Pgm_Name"`" "#Patterns != #Arg_Patterns"
 [ "${#Patterns[@]}" =  "${#Arg_Pattern_Explanations[@]}" ] ||
-    error "`cr 21 312 "$Pgm_Name"`" "#Patterns != #Arg_Pattern_Explanations"
+    error "`cr 23 303 "$Pgm_Name"`" "#Patterns != #Arg_Pattern_Explanations"
 
 give_full_help() {
     local i
@@ -327,6 +318,18 @@ give_full_help() {
 }
 
 # ** Process Command Line Options
+
+# Find the path to a program with fallbacks, or fail
+# try_find_prog_path PROGRAM_NAME...
+try_find_prog_path() {
+    # set -vx                         # DEBUG !!
+    local prog prog_path=''
+    for prog; do
+        prog_path="$(type -p "$prog" 2>/dev/null)" && break
+    done
+    [ -n "$prog_path" ] ||      # exit status of 0 or 1
+        printf -- '%s' "$prog_path" # exit status 0=true
+}
 
 option_arg() {
     case "$1" in
@@ -347,7 +350,7 @@ do_suss_options() {
     set_param Pattern 'unknown'
     # Consider making this a command-line option instead!!
     set_param Build_Shell "$(try_find_prog_path dash sh)" ||
-        error "`cr 22 350 $this`" "can't suss Build_Shell"
+        error "`cr 24 353 $this`" "can't suss Build_Shell"
     set_final Build_Shell;
 
     # record options and save non-option arguments
@@ -358,19 +361,23 @@ do_suss_options() {
 
     # if asked or if no non-option arguments, give full help
     { "$Give_Help" || [ ${#Pgm_Args[@]} -eq 0 ]; } && { give_full_help; exit 0; }
-    # put in the code for targeted help!!
+    return 0
 }
 
 # ** Determine Argument Patterns and Finalize Globals
 
+# Roadmap item for targeted --help !!
+# Once a pattern is sussed or while it's being sussed
+# When the --help option was given
+# Explain the pattern and exit 0
+
 # *** tarball pattern
 
 try_tarball() {
-#   set -vx                  # debug temp!!!
     local this='try_tarball'
     [ $# -gt 0 ] && [ $# -le 2 ] || return 1
     [ -f "$1" ] || return 1
-    [ $# -eq 1 ] || expect_dir "$2" "`cr 23 373 $this`"
+    [ $# -eq 1 ] || expect_dir "$2" "`cr 25 380 $this`"
     local f1=${1##*/} # without the path
     local f2=${f1%.*} # without last extension
     local f           # trial project name
@@ -384,12 +391,12 @@ try_tarball() {
     local v=${f##*-}            # trial version string
     local regexp_pattern='[1-9][0-9]?.[0-9][0-9]?(rc)?'
     [[ "$v" =~ $regexp_pattern ]] ||
-        error "`cr 24 387 $this`" "unknown version pattern in $f"
+        error "`cr 26 394 $this`" "unknown version pattern in $f"
     # We're satisfied, so
     set_final Archive $(realpath "$1")
     set_final Version "$v"
     [ $# = 2 ] && set_final Build_Grandparent_Dir "$(realpath "$2")"
-    expect_dir "$Build_Grandparent_Dir" "`cr 25 392 $this`"
+    expect_dir "$Build_Grandparent_Dir" "`cr 27 399 $this`"
     return 0
 }
 
@@ -398,14 +405,14 @@ try_tarball() {
 try_version_git() {
     local this='try_version_git'
     set_final Pattern 'tarball'
-    context_level_report "`cr 26 401 $this`" apology "$Pattern pattern not yet implemented"
+    report -apology "`cr 28 408 $this`" "$Pattern pattern not yet implemented"
     return 1
 }
 
 try_bare_version() {
     local this='try_bare_version'
     set_final Pattern 'version'
-    context_level_report "`cr 27 408 $this`" apology "$Pattern pattern not yet implemented"
+    context_level_report "`cr 29 415 $this`" apology "$Pattern pattern not yet implemented"
     return 1
 }
 
@@ -415,10 +422,10 @@ do_suss_args() {
     local this=do_suss_args
 
     try_tarball "$@" || try_version_git "$@" || try_bare_version "$@" ||
-        error "`cr 28 418 $this`" 'unrecognized install pattern'
+        error "`cr 30 425 $this`" 'unrecognized install pattern'
 
     [ -n "$Version" ] ||
-        error "`cr 29 421 $this`" "Failed to suss a version"
+        error "`cr 31 428 $this`" "Failed to suss a version"
 }
 
 # *** Try to find tcl library
@@ -433,13 +440,25 @@ do_try_find_tcl() {
         with_tcl="--with-tclconfig=${tcl%/*}"
     else
         with_tcl=''
-        report -warning "`cr 30 436 $this`" "Can't find tcl, will proceed without it!!"
+        report -warning "`cr 32 443 $this`" "Can't find tcl, will proceed without it!!"
     fi
 }
 
 # ** Prepare, Configure, Build, Install
 
-# set -xv
+# *** su commands
+
+# su_acct_dir_cmd [CONTEXT] account directory command...
+su_acct_dir_cmd() {
+    local cxt=''                # will grow
+    is_cs "$1" && { cxt="$1"; shift; }
+    local acct="$1" dir="$2";  shift 2
+    # abuse our knowledge of ContextSeqence representation and watch out:
+    # - spaces or colons in the variables will produce a messy report!
+    cxt="$(cr acct = "$acct") $(cr dir = "$dir") $(cr shell = "$Build_Shell") $cxt"
+    report -command "$cxt" "$*"
+    "$Dry_Run" || su - "$acct" -s "$Build_Shell" -c "cd \"$dir\"; $*"
+}
 
 # *** Prepare Build Directory With Fresh Source
 
@@ -449,25 +468,25 @@ do_prepare_build_dir() {
     case "$Pattern" in
         (tarball)
         set_param Source_Dir "$Build_Parent_Dir/$Source_Name"
-        report -command "`cr 31 452 $this`" mkdir -p "$Source_Dir"
-        mkdir -p "$Source_Dir"
-        report -command "`cr 32 454 $this`" chown -R "$Build_Acct:$Build_Group" "$Build_Dir"
+        ensure_dir "$Source_Dir" "$Build_Acct" "$Build_Group"  "`cr 33 471 $this`" 
+        report -command "`cr 34 472 $this`" chown -R "$Build_Acct:$Build_Group" "$Build_Dir"
         chown -R "$Build_Acct:$Build_Group" "$Build_Parent_Dir"
-        local cxt1="`cr 33 456 $this`"
+        local cxt1="`cr 35 474 $this`"
         "$Dry_Run" ||
             su_acct_dir_cmd "$cxt1" "$Build_Acct" "$Build_Parent_Dir" \
                             tar xf - "$Archive" || error "$cxt1" "Can't extract $Archive"
         "$Dry_Run" || ! empty_dir "$Source_Dir"  ||
-            expect_dir "$Source_Dir" "`cr 34 461 $this`"
-        local cxt2="`cr 35 462 $this`"
+            expect_dir "$Source_Dir" "`cr 36 479 $this`"
+        local cxt2="`cr 37 480 $this`"
         "$Dry_Run" ||
             su_acct_dir_cmd "$cxt2" "$Build_Acct" "$Build_Parent_Dir" \
                             tar cf - "$Source_Name" |
                 su_acct_dir_cmd "$cxt2" "$Build_Acct" "$Build_Dir" \
                                 tar xf - || error "$cxt2" "Can't copy $Archive"
         ;;
-        (*) error "`cr 36 469 $this`" "unimplemented pattern $Pattern" ;;
+        (*) error "`cr 38 487 $this`" "unimplemented pattern $Pattern" ;;
     esac
+    return 0
 }
 
 # *** Logging Functions
@@ -488,14 +507,14 @@ set_phase() {
         declare -g Verbose
         local verbose="$Verbose"
         report "* Early Globals"
-        report "`cr 37 491 $Phase`" "Arguments: ${Pgm_Args[*]}"
-        report "`cr 38 492 $Phase`" "Initial Globals:\n"
+        report "`cr 39 510 $Phase`" "Arguments: ${Pgm_Args[*]}"
+        report "`cr 40 511 $Phase`" "Initial Globals:\n"
         report_params "${Early_Globals[@]}"
         declare -g Early_GLobals=( )
         Verbose="$verbose"
     }
 
-    report "* Phase $Phase"
+    report '' "* Phase $Phase"
 }
 
 # Using awk
@@ -512,29 +531,15 @@ log_error() {
     exit "$code"
 }
 
-# *** su commands
-
-# su_acct_dir_cmd [CONTEXT] account directory command...
-su_acct_dir_cmd() {
-    local cxt=''                # will grow
-    is_cs "$1" && { cxt="$1"; shift; }
-    local acct="$1" dir="$2";  shift 2
-    # abuse our knowledge of ContextSeqence representation and watch out:
-    # - spaces or colons in the variables will produce a messy report!
-    cxt="$(cr acct = "$acct") $(cr dir = "$dir") $(cr shell = "$Build_Shell") $cxt"
-    report -command "$cxt" "$*"
-    "$Dry_Run" || su - "$acct" -s "$Build_Shell" -c "cd \"$dir\"; $*"
-}
-
 # *** Phase CONFIG
 
 do_config() {
-    local this=do_configure
+    local this=do_config
 
     set_phase CONFIG
 
     set_param Source_Root "$Build_Dir/$Source_Name"
-    expect_dir "$Source_Root" "`cr 39 537 $this`" Source_Root
+    ensure_dir "$Source_Root" "$Build_Acct" "$Build_Group"  "`cr 41 542 $this`" 
 
     # disable shellcheck wanting quotes around $with_tcl
     # shellcheck disable=SC2206
@@ -549,7 +554,7 @@ do_config() {
 
     $Verbose && report_param_array Config_Options
 
-    local cxt="`cr 40 552 $this`"
+    local cxt="`cr 42 557 $this`"
     su_acct_dir_cmd "$cxt" "$Build_Acct" "$Source_Root" ./configure "${Config_Options[*]}" |
         log_example || log_error "$cxt" "./configure -> $?"
 }
@@ -561,7 +566,7 @@ do_build() {
 
     set_phase BUILD
 
-    local cxt="`cr 41 564 $this`"
+    local cxt="`cr 43 569 $this`"
     su_acct_dir_cmd "$cxt" "$Build_Acct" "$Source_Root" make |
         log_example || log_error "$cxt" "make -> $?"
 }
@@ -571,7 +576,7 @@ do_install() {
 
     set_phase INSTALL
 
-    local cxt="`cr 42 574 $this`"
+    local cxt="`cr 44 579 $this`"
     su_acct_dir_cmd "$cxt" "$Build_Acct" "$Source_Root" make install |
         log_example || log_error "$cxt" "make install -> $?"
 }
@@ -582,17 +587,17 @@ do_build_install_contribs() {
     local d this=do_build_install_contribs
 
     set_final Contrib_Dir "$Source_Root/contrib"
-    expect_dir "$Contrib_Dir" "`cr 43 585 $this`"
+    expect_dir "$Contrib_Dir" "`cr 45 590 $this`"
 
     for d in xml2 intarray citext hstore
     do
         set_phase $d-BUILD
-        local cxt1="`cr 44 590 $this`"
+        local cxt1="`cr 46 595 $this`"
         su_acct_dir_cmd "$cxt1" "$Build_Acct" "$Contrib_Dir" make |
             log_example || error "$cxt1" "make -> $?"
 
         set_phase $d-INSTALL
-        local cxt2="`cr 45 595 $this`"
+        local cxt2="`cr 47 600 $this`"
         su_acct_dir_cmd "$cxt2" "$Build_Acct" "$Contrib_Dir" make install |
             log_example || error "$cxt2" "make install -> $?"
     done
@@ -628,14 +633,15 @@ try() {
 
 do_init_pg() {
     local this=do_init_pg
-    try "`cr 46 631 $this`" mkdir -p "$PG_Data"
-    try "`cr 47 632 $this`" empty_dir "$PG_Data"
-    try "`cr 48 633 $this`" chmod 700 "$PG_Data"
-    try "`cr 49 634 $this`" chown -R "$PG_Acct:$PG_Group" "$PG_Dir"
-    pg_data_cmd "`cr 50 635 $this`" initdb ||
-        error "`cr 51 636 $this`" "initdb -> $?"
+    ensure_dir "$PG_Data" "$PG_Acct" "$PG_Group" "`cr 48 636 $this`"
+    try "`cr 49 637 $this`" empty_dir "$PG_Data"
+    try "`cr 50 638 $this`" chmod 700 "$PG_Data"
+    # Change whole install area ownership from Build_Acct to PG_Acct
+    try "`cr 51 640 $this`" chown -R "$PG_Acct:$PG_Group" "$PG_Dir"
+    pg_data_cmd "`cr 52 641 $this`" initdb ||
+        error "`cr 53 642 $this`" "initdb -> $?"
     # we should take care of this: !!
-    report "`cr 52 638 $this`" "-remember to" \
+    report "`cr 54 644 $this`" "-remember to" \
            "ln -s XFiles directory to $PG_Data"
 }
 
@@ -647,8 +653,8 @@ do_start_pg() {
     # and do something appropriate if there is!!
 
     # start the PostgreSQL server
-    pg_data_cmd "`cr 53 650 $this`" "pg_ctl -l $PG_Log" start ||
-        error "`cr 54 651 $this`" "starting server -> $?"
+    pg_data_cmd "`cr 55 656 $this`" "pg_ctl -l $PG_Log" start ||
+        error "`cr 56 657 $this`" "starting server -> $?"
     sleep 5	# seems to need a moment to get ready
 }
 
@@ -662,8 +668,8 @@ do_add_langs() {
     for lang in $langs; do
         # try $PG_Bin/createlang "$lang" template1
         printf -- "create trusted procedural language '%s';\n" "$lang" |
-            pg_cmd "`cr 55 665 $this`" psql -a template1 || {
-            report "`cr 56 666 $this`" "createlang $lang -> $?"
+            pg_cmd "`cr 57 671 $this`" psql -a template1 || {
+            report "`cr 58 672 $this`" "createlang $lang -> $?"
             let ++PG_Problem_Count
         }
     done
@@ -674,8 +680,8 @@ do_create_databases() {
     local db this=do_create_databases
     for db in wicci1
     do
-        pg_cmd "`cr 57 677 $this`" createdb "$db" || {
-            report "`cr 58 678 $this`" "createdb $db -> $?"
+        pg_cmd "`cr 59 683 $this`" createdb "$db" || {
+            report "`cr 60 684 $this`" "createdb $db -> $?"
             let ++PG_Problem_Count
         }
     done
@@ -683,12 +689,12 @@ do_create_databases() {
 
 do_manage_pg_config_file() {
     local this=do_manage_pg_config_file
-    pg_cmd "`cr 59 686 $this`" mv "$PG_Conf" "$PG_Conf_Orig" ||
-        report "`cr 60 687 $this`" "mv ${PG_Conf##*/} -> $?"
-    pg_cmd "`cr 61 688 $this`" cp "$PG_Conf_Orig" "$PG_Conf" ||
-        report "`cr 62 689 $this`" "cp ${PG_Conf##*/} -> $?"
+    pg_cmd "`cr 61 692 $this`" mv "$PG_Conf" "$PG_Conf_Orig" ||
+        report "`cr 62 693 $this`" "mv ${PG_Conf##*/} -> $?"
+    pg_cmd "`cr 63 694 $this`" cp "$PG_Conf_Orig" "$PG_Conf" ||
+        report "`cr 64 695 $this`" "cp ${PG_Conf##*/} -> $?"
     # we should take care of this: !!
-    report "`cr 63 691 $this`" '-remember to' \
+    report "`cr 65 697 $this`" '-remember to' \
            'add Make/wicci1 to dynamic_library_path'
     # and any other typical changes
 }
@@ -702,8 +708,8 @@ do_create_superusers() {
     echo -n 'Who should we make be PostgreSQL superuser(s)? '
     read users -r
     for user in $users; do
-        { user_exists "$user" && pg_cmd "`cr 64 705 $this`" createuser --superuser "$user"; } ||
-                report "`cr 65 706 $this`" "createuser $user -> $?"
+        { user_exists "$user" && pg_cmd "`cr 66 711 $this`" createuser --superuser "$user"; } ||
+                report "`cr 67 712 $this`" "createuser $user -> $?"
     done
 }
 
@@ -711,23 +717,20 @@ do_create_superusers() {
 
 # We need a mechanism for skipping doing a reasonable subset of the steps
 
-# DEBUG!!!
-set -xv
-do_suss_accounts
-do_suss_locations
-
+# Store script OPTIONS as parameter values
+# put regular options into global array Pgm_Args
 do_suss_options "$@"
-set -- "${Pgm_Args[@]}"
-test root = "`whoami`" || error "`cr 66 721 "$Pgm_Name"`" "Must run as root!"
+set -- "${Pgm_Args[@]}"      # options now gone from "$@"
+
+test root = "`whoami`" || error "`cr 68 725 "$Pgm_Name"`" "Must run as root!"
 do_suss_args "$@"
 do_suss_build_dirs "$Version"
 do_suss_pg_dirs "$Version"
 
+# Find location of special libraries
 do_try_find_tcl
+
 do_prepare_build_dir
-do_config
-do_build
-do_install
 
 set_phase POSTGRES
 

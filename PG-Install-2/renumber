@@ -26,6 +26,9 @@ for f; do
         echo "$PgmName warning: Skipping non-file argument $f"
         continue
     }
+    tmp="$f.$$"                 # "unique" name, $$ --> our PID
+    touch "$tmp"                # create as empty file
+    chmod --reference="$f" "$tmp" # set permissions of $f on "$tmp"
     {
 awk 'BEGIN {
     code=10
@@ -44,7 +47,7 @@ line ~ cs {
     line=gensub(cs, "\\1" code++ "\\3\\4\\5", "1", line)
     line=gensub(cs, "\\1\\2\\3" NR "\\5", "1", line)
 }
-{print line}' "$f" >"$f.$$" && mv --backup=numbered "$f.$$" "$f"
+{print line}' "$f" >"$tmp" && mv --backup=numbered "$tmp" "$f"
 } || {
         echo "$PgmName warning: Something went wrong processing $f"
         continue

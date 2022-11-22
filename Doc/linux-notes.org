@@ -1,3 +1,0 @@
-** Generic Linux Installation Issues for PostgreSQL on the Wicci
-
-

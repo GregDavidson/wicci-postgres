@@ -1,4 +1,16 @@
-* Debian Gnu/Linux Issues
+* pg-install on Gnu/Linux
+
+** pg-install on Debian Gnu/Linux
+
+This should apply, more or less, to any Debian-based distro,
+- Ubuntu, Mint, et al
+
+What's written here is based on my experience with
+- Linux Mint 20.3 una
+- based on Ubuntu 20.04 focal
+- based on debian bullseye/sid
+
+*** Installing The Dependencies
 
 I didn't manage to install the build-deps for version 15.0
 and in my experience getting the build-deps for any recent
@@ -33,6 +45,6 @@ I didn't manage to get it to install version 15.0
   # I couldn't get a version 15 out of it
 #+end_src
 
-#+begin_example
+** pg-install on RedHat Linux
 
-#+end_example
+This might also apply to other 

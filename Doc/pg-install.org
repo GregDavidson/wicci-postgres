@@ -43,7 +43,7 @@ apt install -y build-essential
 apt install -y autotools-dev dpkg-dev devscripts
 Get the postgresql source package
 apt-get build-dep postgresql
-# or follow the advise at
+# or follow the advice at
 $ mk-build-deps PKGNAME --install --root-cmd sudo --remove
 # and install that
 # Install all the other things:

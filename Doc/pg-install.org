@@ -1,9 +1,9 @@
 * pg-install script literate programming
 
-Once it's done, we'll be moving the code of =pg-install= into this file as an
-/OrgMode Literate Programming Document/.
+Once it's done, let's move the code of =pg-install= and the most salient parts
+of this file as into an /OrgMode Literate Programming Document/!
 
-In the meantime, we're pooling issues and commentary here.
+In the meantime, we're pooling issues and commentary here.  It's messy!
 
 ** Issues
 
@@ -20,11 +20,6 @@ Possible solutions:
       - Main tiny script runs as root or as someone with sudo privileges
       - Bin script runs as =bin=
       - Pg script runs as =postgres=
-*** Issue: Logging of error messages
-
-- It's not happening!
-- How can we streamline this?
-- And might as well use something like try
 
 *** Issue: Build-Depends
 
@@ -32,8 +27,8 @@ Figuring out build-dependencies, including those needed for the extra features
 we're adding, is a pain. We've always done it by hand before. We're probably
 still going to have to do it mostly by hand, but let's record all of the
 dependencies on our various platforms and see if we can at least document them
-and hopefully semi or fully automate their installation!
-Notes on Proposed Solution with Debian-based Linux:
+and hopefully semi or fully automate their installation! Notes on Proposed
+Solution with Debian-based Linux:
 
 - See [[https://www.guyrutenberg.com/2017/09/23/use-mk-build-deps-instead-of-apt-get-build-dep][prefer mk-build-deps]]
 #+begin_src shell
@@ -76,17 +71,6 @@ Some build dependencies
       - lz compression: zlib, liblz
       - DocBook XML - for making the online documentation
 
-        
-*** Source a platform-specific file
-
-Add an option to specify the platform and use that
-to source a platform-specific module, if it is present.
-
-*** Issue: Ensure Accounts Exist
-
-- bin
-- postgres
-
 *** Issue: Postgres Account uncomfortable from command shell
 Proposed solution:
 Make sure the account exists with a nice shell.
@@ -98,41 +82,9 @@ Create a =pg_skel= (where?) with
  - =.profile= =.sh.d/*= =.guix-profile= =.config/guix=
  - what goes in =.sh.d= and what else do we want?
 
-Issue: Automate connections to Wicci resources
-Proposed solution:
-Automatically add =XFiles= link to =~postgres/data= directory
-Automatically add =Wicci/Make/wicci1= to =dynamic_librqary_path=
-in =~postgres/data/postgresql.conf=
-Do other easy changes to =~postgres/data/postgresql.conf=
-Provide options for these things!
-- Source Wicci paths script!
-- Make sure it defines these things!
+Consider using Wicci paths script to simplify Profile!
 
-** Global Variables, Logging, Error Management
-
-All /readonly/ (aka /immutable/) global /parameters/ (aka /variables/)
-should be declared as such with
-- =declare -r= at top level
-- or =declare -gr= inside a function body
-
-The eventual =$Build_Dir= will be
-=$Project_Parent/$Project/postgresql-$Version/Attempt-1=
-which will contain
-- the postgresql sources for this build attempt
-- the log files
-This all gets set up in the =Phase=SETUP=
-The =Phase=SETUP= logs will initially live in our
-temporary =Build_Dir="/tmp/$Pgm_Name-$$"=
-- =$$= expands to the /PID/ of this shell process
-At the beginning of the =Phase=BUILD=
-- or maybe at the end of =Phase=SETUP=?? check!!
-we will be setting
-=Build_Dir=$Project_Parent/$Project/postgresql-$Version/Attempt-1=
-and if this build fails part way though (which it will)
-this script will automatically create fresh =$Build_Dirs= of
-- =Build_Dir=$Project_Parent/$Project/postgresql-$Version/Attempt-2=
-- =Build_Dir=$Project_Parent/$Project/postgresql-$Version/Attempt-3=
-- and so on, as needed
+** Error Detection and Tracing
 
 *** Error Management
 
@@ -140,23 +92,14 @@ this script will automatically create fresh =$Build_Dirs= of
   set -u  # expansion of undefined variable is an error
   set -e  # error of a complete command aborts script
   # skip pipefail because we're usually piping to a logging sink
-  set -o pipefail                 # pipeline gets exit code from last component
+  set -o pipefail                 # exit code from last component failing
   set -v                          # echo commands before expansion
   set -vx                         # echo commands before execution
 #+end_src
 
 *** Reporting Convenience Functions
 
-#+begin_src sh
-  # Very specific, not generalized!
-  report_bullet() {
-    printf -- '- %s\n' "$*" | log_tee
-  }
-  report_def() {
-    local term="$1"; shift
-    printf -- '- %s :: %s\n' "$term" "$*" | log_tee
-  }
-#+end_src
+This all got revamped!
 
 ** Bash Bug(s) and Infelicities
 
@@ -166,12 +109,3 @@ in modifying local parameter =from=.
 =type -p type=
 - gives the empty string as expected
 - gives success NOT as expected!
-
-** Automatic exit code and line number management
-
-rather than using bare exit codes, we could use, e.g.
-- line_number:exit_code
-Advantages:
-- both values could be assigned by a simple awk script
-- distinguishing such values from regular integers
-- allows reporting line numbers in error messages 

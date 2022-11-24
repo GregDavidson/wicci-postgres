@@ -12,6 +12,10 @@ declare -ga PG_Superusers=(
     greg
 )
 
+declare -ga PG_Databases=(
+    wicci1
+)
+
 # ** Locations of Wicci Resources
 
 # add this to the postgresql.conf dynamic_library_path
@@ -23,27 +27,34 @@ declare -g PG_Wicci_XFiles=/home/greg/Projects/Wicci/XFiles
 # ** Try to find and add tcl
 
 # The =tcl= language is one of the most flexible and performant scripting
-# languages, probably the next best thing to writing your server-side code in C.
-# It's not required for the Wicci, but some of the current Wicci developers are
-# used it having it available.
+# languages, the next best thing to writing your server-side code in C.
+# It's not required for the Wicci, and some of the current Wicci developers
+# (Lynn and Greg) are used to having it available.  What server-side
+# languages would YOU like to have in in your custom PostgreSQL?
 
-do_try_find_tcl() {
+find_tcl_maybe() {
     local tcl this=do_try_find_tcl
     for tcl in /usr/{lib,lib64}{,/tcl*}/tclConfig.sh
     do
         [ -f "$tcl" ] && break
     done
-    if [ -f "${tcl:-}" ]; then
-        with_tcl="--with-tclconfig=${tcl%/*}"
-    else
+    [ -f "${tcl:-}" ] || {
         with_tcl=''
         report -warning "`cr 26 407 $this`" \
                "Can't find tcl, will proceed without it!!"
-    fi
+        return 1
+    }
+    with_tcl="--with-tclconfig=${tcl%/*}"
+    return 0
 }
 
-do_try_find_tcl
+declare -ga Config_Options
 
-Config_Options+=(
-    $with_tcl                   # don't quote this!
-)
+! find_tcl_maybe || {
+    declare -ga PG_Langs=(
+        pltcl
+    )
+    Config_Options+=(
+        $with_tcl                   # don't quote this!
+    )
+}

@@ -1,6 +1,12 @@
 Directory Wicci/Postgres/PG-Install-2
 
 Run them with no arguments to get help:
-
-- [[file:pg-install][pg-install]] :: the almost finished new install script
+- [[file:pg-install][pg-install]] :: the latest install script
 - [[file:renumber][renumber]] :: the renumbering script
+
+You'll also need to customize, but not run:
+- [[file:pg-install-profile][pg-install-profile]] :: a Configuration Profile
+
+These scripts run on my system
+- please test them on your system
+- and help make them better and more portable!

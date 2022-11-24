@@ -23,5 +23,5 @@ There have been three generations of scripts for this purpose!
 - [[File:PG-Install][PG-Install]] :: links to the latest version
 - [[file:PG-Install-0][PG-Install-0]] :: the oldest scripts
 - [[file:PG-Install-1][PG-Install-1]] :: the first attempt at an all-in-one script
-- [[file:PG-Install-2][PG-Install-2]] :: the latest attempt at an all-in-one script
+- [[file:PG-Install-2/README.org][PG-Install-2]] :: the latest attempt at an all-in-one script
 - [[File:Doc/README.org][Doc README]] :: some documentation regarding this task

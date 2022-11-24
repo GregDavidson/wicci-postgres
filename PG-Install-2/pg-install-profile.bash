@@ -44,7 +44,7 @@ find_tcl_maybe() {
     done
     [ -f "${tcl:-}" ] || {
         set_final With_Tcl ''
-        report -warning "`cr 26 407 $this`" \
+        report -warning "`cr 67 47 $this`" \
                "Can't find tcl, will proceed without it!!"
         return 1
     }

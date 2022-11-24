@@ -3,9 +3,10 @@
 Please place what you're figuring out about how to install PostgreSQL for the
 Wicci on your platform in a file in this directory, and then create a link from
 this README to your platform-specific or other informational document. OrgMode
-format preferred but whatever floats your boat!
+format is preferred unless something else meets your needs much better.
 
 Files:
 
-[[file:linux-notes.org][General Linux Notes]]
-[[file:debian-notes.org][Debian Gnu/Linux Notes]]
+[[pg-install-hello.org][Satisfying PostgreSQL Requisites]]
+[[pg-install-linux.org][General Linux Notes]]
+[[pg-install.org][Miscellaneous Notes]]

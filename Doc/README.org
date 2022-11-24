@@ -7,6 +7,6 @@ format is preferred unless something else meets your needs much better.
 
 Files:
 
-[[pg-install-hello.org][Satisfying PostgreSQL Requisites]]
-[[pg-install-linux.org][General Linux Notes]]
-[[pg-install.org][Miscellaneous Notes]]
+[[file:pg-install-linux.org][Guidance For Various Linux Distros]]
+[[file:pg-install-hello.org][General Overview of Task, especially Satisfying Prerequisites]]
+[[file:pg-install.org][Miscellaneous Project Notes]]

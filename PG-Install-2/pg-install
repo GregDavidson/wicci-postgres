@@ -738,7 +738,14 @@ do_build_install_contribs() {
 pg_cmd() {
     local cxt=''
     is_cs "$1" && { cxt="$1"; shift; }
-    su_acct_dir_cmd_log "$cxt" "$PG_Acct" "$PG_Dir" "bin/$*"
+    su_acct_dir_cmd_log "$cxt" "$PG_Acct" "$PG_Dir" "$*"
+}
+
+# pg_bin_cmd [CONTEXT] command...
+pg_bin_cmd() {
+    local cxt=''
+    is_cs "$1" && { cxt="$1"; shift; }
+    pg_cmd "$cxt" "bin/$*"
 }
 
 # pg_data_cmd [CONTEXT] command...
@@ -746,7 +753,7 @@ pg_data_cmd() {
     local cxt=''
     is_cs "$1" && { cxt="$1"; shift; }
     local cmd="$1"; shift
-    pg_cmd "$cxt" "$cmd" -D "$PG_Data" "$@"
+    pg_bin_cmd "$cxt" "$cmd" -D "$PG_Data" "$@"
 }
 
 # try [CONTEXT] COMMAND...
@@ -798,7 +805,7 @@ add_pg_langs() {
     for lang; do
         # try $PG_Bin/createlang "$lang" template1
         printf -- "create trusted procedural language '%s';\n" "$lang" |
-            pg_cmd "`cr 53 797 $this`" psql -a template1 || {
+            pg_bin_cmd "`cr 53 797 $this`" psql -a template1 || {
             report "`cr 54 798 $this`" "createlang $lang -> $?"
             let ++PG_Problem_Count
         }
@@ -810,7 +817,7 @@ add_pg_langs() {
 create_pg_databases() {
     local db this=do_create_databases
     for db; do
-        pg_cmd "`cr 55 809 $this`" createdb "$db" || {
+        pg_bin_cmd "`cr 55 809 $this`" createdb "$db" || {
             report "`cr 56 810 $this`" "createdb $db -> $?"
             let ++PG_Problem_Count
         }
@@ -831,7 +838,7 @@ create_pg_superusers() {
     local user this=create_pg_superusers
     for user; do
         { user_exists "$user" &&
-              pg_cmd "`cr 62 837 $this`" createuser --superuser "$user"
+              pg_bin_cmd "`cr 62 837 $this`" createuser --superuser "$user"
         } || report "`cr 63 838 $this`" "createuser $user -> $?"
     done
 }
@@ -868,8 +875,8 @@ do_pg_postinstall() {
     ! [ -v PG_Databases ] || create_pg_databases "${PG_Databases[@]}"
 
     ! [ -v PG_Wicci_XFiles ] || ! [ -d "$PG_Wicci_XFiles"  ] ||
-        su_acct_dir_cmd_log "`cr 1 1 $this`" "$PG_Acct" "$PG_Dir" \
-                            ln -s "$PG_Wicci_XFiles" "PG_Data/XFiles"
+        pg_cmd "`cr 1 1 $this`" \
+                            ln -s "$PG_Wicci_XFiles" "$PG_Data/XFiles"
 
     # Backup and then edit $PG_Conf
 

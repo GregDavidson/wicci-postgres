@@ -12,17 +12,21 @@ declare -ga PG_Superusers=(
     greg
 )
 
+report_param_array PG_Superusers
+
 declare -ga PG_Databases=(
     wicci1
 )
 
+report_param_array PG_Databases
+
 # ** Locations of Wicci Resources
 
 # add this to the postgresql.conf dynamic_library_path
-declare -g PG_Wicci_Library=/home/greg/Projects/Wicci/Make/wicci1
+set_final PG_Wicci_Library /home/greg/Projects/Wicci/Make/wicci1
 
 # add a symbolic link from $PG_Data/XFiles to this directory
-declare -g PG_Wicci_XFiles=/home/greg/Projects/Wicci/XFiles
+set_final PG_Wicci_XFiles /home/greg/Projects/Wicci/XFiles
 
 # ** Try to find and add tcl
 
@@ -39,12 +43,12 @@ find_tcl_maybe() {
         [ -f "$tcl" ] && break
     done
     [ -f "${tcl:-}" ] || {
-        with_tcl=''
+        set_final With_Tcl ''
         report -warning "`cr 26 407 $this`" \
                "Can't find tcl, will proceed without it!!"
         return 1
     }
-    with_tcl="--with-tclconfig=${tcl%/*}"
+    set_final With_Tcl "--with-tclconfig=${tcl%/*}"
     return 0
 }
 
@@ -55,6 +59,7 @@ declare -ga Config_Options
         pltcl
     )
     Config_Options+=(
-        $with_tcl                   # don't quote this!
+        $With_Tcl                   # don't quote this!
     )
+    report_param_array Config_Options
 }

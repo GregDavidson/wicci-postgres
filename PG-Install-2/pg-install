@@ -235,12 +235,14 @@ error() {
 # so that the settings get reported!
 
 # report_param global_parameter
+# fix to take optional context!!
 report_param() {
     local -n p="$1"     # alias p to the parameter
     report -"\$$1" '' "$p"
 }
 
 # report_param global_array_parameter
+# fix to take optional context!!
 report_param_array() {
     local -n a="$1"     # alias a to the array
     local i
@@ -251,6 +253,7 @@ report_param_array() {
 }
 
 # report_params PARAMETER...
+# fix to take optional context!!
 report_params() {
     local p; for p; do report_param "$p"; done
 }
@@ -267,6 +270,7 @@ set_param_silently() {
 }
 
 # set_param global_parameter [value]
+# fix to take optional context!!
 set_param() {
     set_param_silently "$@"
     report_param "$1" # report it
@@ -282,7 +286,7 @@ set_final() {
 
 # ** Set Accounts and Locations
 
-# Using grep
+# Uses grep
 # Assumes FILE is Posix /etc/passwd or /etc/group
 # user_group_exists NAME 'user|group' FILE [CONTEXT]
 user_group_exists() {
@@ -318,11 +322,6 @@ do_set_locations() {
     done
     [ -d "$d" ] || error "`cr 15 320 $this`" "expected PG_Parent_Dir $d"
     set_final PG_Parent_Dir "$d"
-    : "${Profile:=}"            # if unset, set to empty string
-    [ -z "${Profile}" ] || ! [ -f "$Profile_Default" ] || \
-        set_final Profile "$Profile_Default"
-    [ -z "${Profile}" ] || [ -f "$Profile" ] || \
-        error "`cr 16 326 $this`" expected Profile script "$Profile"
 }
 
 # ** Process Command Line Options
@@ -416,6 +415,13 @@ do_suss_options() {
     done
 
     "$Give_Help" && { give_full_help; exit 0; }
+
+    # Ensure we have a Configuration Profile!
+    : "${Profile:=}"            # if unset, set to empty string
+    [ -n "${Profile}" ] || ! [ -f "$Profile_Default" ] || \
+        set_final Profile "$Profile_Default"
+    [ -f "$Profile" ] || \
+        error "`cr 16 326 $this`" expected Profile script "$Profile"
     return 0
 }
 
@@ -486,7 +492,7 @@ do_suss_args() {
 
 # *** Given Version, Finalize Build and PG Dirs
 
-# Using ls, grep
+# Uses ls, grep
 # empty_dir() { ! [ -e "$1" ] || [ -d "$1"] && ! ls -qAH -- "$1" | grep -q .; }
 # just using bash builtin features
 empty_dir() {
@@ -498,7 +504,7 @@ expect_dir() {
     [ -d "$1" ] || error "${2:-}" "Expected directory $1"
 }
 
-# Using mkdir, chown
+# Uses mkdir, chown
 # ensure directory exists at PATH or mkdir and chown it
 # ensure_dir PATH ACCOUNT GROUP [CONTEXT]
 ensure_dir() {
@@ -640,7 +646,7 @@ set_phase() {
     report '' "* Phase $Phase"
 }
 
-# Using awk
+# Uses awk
 # log stdin content, if any, as an OrgMode example block
 log_example() {
     awk -v b='#+begin_example' -v e='#+end_example' \
@@ -755,6 +761,9 @@ try() {
 
 do_init_pg() {
     local this=do_init_pg
+
+    set_phase POSTGRES
+
     ensure_dir "$PG_Data" "$PG_Acct" "$PG_Group" "`cr 44 762 $this`"
     try "`cr 45 763 $this`" empty_dir "$PG_Data"
     try "`cr 46 764 $this`" chmod 700 "$PG_Data"
@@ -782,12 +791,11 @@ do_start_pg() {
 
 # *** Configuring PostgreSQL
 
+# add_pg_langs LANG...
 # add additional languages to database template1
-do_add_langs() {
-    local this=do_add_langs
-    local lang langs='pltcl'
-    set_param PG_Problem_Count  # might already exist, otherwise now 0
-    for lang in $langs; do
+add_pg_langs() {
+    local lang this=add_pg_langs
+    for lang; do
         # try $PG_Bin/createlang "$lang" template1
         printf -- "create trusted procedural language '%s';\n" "$lang" |
             pg_cmd "`cr 53 797 $this`" psql -a template1 || {
@@ -797,11 +805,11 @@ do_add_langs() {
     done
 }
 
+# do_create_databases database_name...
 # try to create some databases
-do_create_databases() {
+create_pg_databases() {
     local db this=do_create_databases
-    for db in wicci1
-    do
+    for db; do
         pg_cmd "`cr 55 809 $this`" createdb "$db" || {
             report "`cr 56 810 $this`" "createdb $db -> $?"
             let ++PG_Problem_Count
@@ -809,30 +817,66 @@ do_create_databases() {
     done
 }
 
-do_manage_pg_config_file() {
-    local this=do_manage_pg_config_file
+# backup $PG_Conf to $PG_Conf_Orig 
+backup_pg_conf_file() {
+    local this=backup_pg_conf_file
     pg_cmd "`cr 57 818 $this`" mv "$PG_Conf" "$PG_Conf_Orig" ||
         report "`cr 58 819 $this`" "mv ${PG_Conf##*/} -> $?"
     pg_cmd "`cr 59 820 $this`" cp "$PG_Conf_Orig" "$PG_Conf" ||
         report "`cr 60 821 $this`" "cp ${PG_Conf##*/} -> $?"
-    # we should take care of this: !!
-    report "`cr 61 823 $this`" '-remember to' \
-           'add Make/wicci1 to dynamic_library_path'
-    # and any other typical changes
 }
 
-# create some PostgreSQL superusers
-# these should really come from the command line or a config file!!
-# and/or default to the real-user-id
-do_create_superusers() {
-    local users this=do_create_superusers
-
-    echo -n 'Who should we make be PostgreSQL superuser(s)? '
-    read -r users
-    for user in $users; do
-        { user_exists "$user" && pg_cmd "`cr 62 837 $this`" createuser --superuser "$user"; } ||
-                report "`cr 63 838 $this`" "createuser $user -> $?"
+# create_pg_superusers USER_ACCOUNT...
+create_pg_superusers() {
+    local user this=create_pg_superusers
+    for user; do
+        { user_exists "$user" &&
+              pg_cmd "`cr 62 837 $this`" createuser --superuser "$user"
+        } || report "`cr 63 838 $this`" "createuser $user -> $?"
     done
+}
+
+# Uses grep
+# edit_pg_conf setting from to
+edit_pg_conf() {
+    local setting="$1" from="$2" to="$3" this=edit_pg_conf
+    local conf1=${PG_Conf##*/}    # for nicer error messages
+    local conf2="$conf1.$setting" # ditto
+
+    [ 1 -ne $(grep -c "\\<$setting\\>" "$PG_Conf") ] || {
+        report -warning `cr 1 1 $this` "$conf1 $setting count != 1"
+        let ++PG_Problem_Count
+        return 1
+    }
+    sed "/$setting *=/h;s/^#*//;s/$from/$to/;x" \
+        "$PG_Conf" >> "$PG_Conf.$setting"
+    [ 2 -eq $(grep -c "\\<$setting\\>") ] || {
+        report -warning "`cr 56 810 $this`" "$conf2 count != 2"
+        let ++PG_Problem_Count
+        return 1
+    }
+    cp "$PG_Conf.$setting" "$PG_Conf"
+}
+
+# do_pg_postinstall as directed by the Profile
+do_pg_postinstall() {
+    local this=do_pg_postinstall
+
+    declare -g PG_Problem_Count=0
+
+    ! [ -v PG_Superusers ] || create_pg_superusers "${PG_Superusers[@]}"
+    ! [ -v PG_Databases ] || create_pg_databases "${PG_Databases[@]}"
+
+    ! [ -v PG_Wicci_XFiles ] || ! [ -d "$PG_Wicci_XFiles"  ] ||
+        su_acct_dir_cmd_log "`cr 1 1 $this`" "$PG_Acct" "$PG_Dir" \
+                            ln -s "$PG_Wicci_XFiles" "PG_Data/XFiles"
+
+    # Backup and then edit $PG_Conf
+
+    backup_pg_conf_file
+
+    edit_pg_conf log_min_messages warning notice
+    edit_pg_conf dynamic_library_path "'" "'${PG_Wicci_Library}:"
 }
 
 # ** Putting it all together
@@ -841,22 +885,37 @@ do_create_superusers() {
 
 [ $# -eq 0 ] && { give_full_help; exit 0; }
 
+# The top-level functions all begin with do_
+# You can find all of their definitions by running
+# grep -n '^do_.*()' pg-install
+
+# set parameters not requiring script arguments, i.e. "$@"
 do_set_accounts
 do_set_locations
+
 # Store script OPTIONS as parameter values
 # put regular options into global array Pgm_Args
 do_suss_options "$@"
 set -- "${Pgm_Args[@]}"      # options now gone from "$@"
 
-test root = "`whoami`" || error "`cr 64 855 "$Pgm_Name"`" "Must run as root!"
-do_suss_args "$@"
+# Uses whoami
+test root = "`whoami`" || error "`cr 64 855 $Pgm_Name`" "Must run as root!"
 
-declare -g Config_Options
+# Figure out the Version from the Pattern!
+do_suss_args "$@"               # non-option arguments
+
+declare -ga Config_Options
 
 # Strategic place to source the Profile as it can
 # override any and all of the sussed Parameters!
-[ -f "${Profile}" ] && . "${Profile}"
+if [ -f "${Profile}" ]; then
+    report '' source "${Profile}" 
+    source "${Profile}"
+else
+    report -warning "`cr 1 1`" "No Configuration Profile $Profile"
+fi
 
+# Where's everything going to go?
 do_suss_build_dirs "$Version"
 do_suss_pg_dirs "$Version"
 
@@ -865,24 +924,11 @@ do_config
 do_build
 do_install
 
-do_build_install_contribs
-
-set_phase POSTGRES
-
-declare -g PG_Problem_Count=0
+do_build_install_contribs       # we need a few of them
 
 do_init_pg
 do_start_pg
-do_add_langs
-[ "$PG_Problem_Count" -eq 0 ] && do_create_databases
-do_manage_pg_config_file
-do_create_superusers
-
-echo "Configure $PG_Conf, etc.  For the Wicci:
-(1) add the Make/wicci1 directory to dynamic_library_path
-(2) symlink the XFiles directory to the PostgreSQL data directory
-Restart the server and Have Fun!"
-
+do_pg_postinstall
 
 # ** Some Final Words
 

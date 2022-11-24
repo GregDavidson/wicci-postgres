@@ -13,15 +13,15 @@ Therefore, these scripts
 - Divide up the stages of each attempt
 - Make lots of tests
 - Stop as soon as anything important fails
-- Generate logs and reports
+- Generate detailed logs and reports
 
-The oldest generation is the most stable despite being fragile.
-
-The latest attempt looks promising and it's not quite ready for use.
+The latest attempt is promising
+- it works on my system :-)
+- it probably won't work on yours :-(
+- unless you can help make it better? :-)
 
 There have been three generations of scripts for this purpose!
-- [[file:PG-Install/README.org][PG-Install]] :: links to the latest version
-- [[file:PG-Install-0][PG-Install-0]] :: the oldest scripts
+- [[file:PG-Install-2/README.org][PG-Install-2]] :: the latest all-in-one script
 - [[file:PG-Install-1][PG-Install-1]] :: the first attempt at an all-in-one script
-- [[file:PG-Install-2/README.org][PG-Install-2]] :: the latest attempt at an all-in-one script
+- [[file:PG-Install-0][PG-Install-0]] :: the oldest scripts
 - [[file:Doc/README.org][Doc README]] :: some documentation regarding this task

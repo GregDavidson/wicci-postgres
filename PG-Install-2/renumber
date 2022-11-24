@@ -3,14 +3,16 @@ PgmName="${0##*/}"
 
 usage="$PgmName textfile..."
 purpose='renumber exit-codes and line-numbers in source file lines
-- we only change non-zero exit-codes
-- exit-codes should be sequential starting with 10
-- line-numbers are the line numbers of the lines of the source file'
+- we only change non-zero exit-codes!
+- new exit-codes are sequential
+    - starting with 10
+    - incrementing across all files!
+- line-numbers are the true line numbers of each source file'
 limitations='only one pair of substitutions will be done for any line
 substitutions will only occur with two patterns
 - "`cr [1-9][0-9]* [1-9][0-9]*
 - "`cs [^ ]+ [1-9][0-9]* [1-9][0-9]*
-where the digits strings are
+where
 - first digit-string is the exit-code
 - second digit-string is the line-number'
 
@@ -21,17 +23,33 @@ where the digits strings are
     exit 0
 }
 
+# awk sends the altered file to stdout
+# - we need to redirect it to the output file
+# awk sends the next starting code to stderr
+# - we need to capture it in parameter next_code
+# this requires some fancy nesting:
+#   next_code=$( { awk 'awk script' >>output_file; } >&2 )
+# which is embedded in another level:
+# { next_code=$( { awk '...' >>$tmp; } >&2 ) && mv $tmp $f; }; code=next_code
+#     ; is equivalent to a newline, ready for a new command
+#     "double-quote" unpredictable expansions, e.g. "$f" not $f
+# The single-quoted 'awk script' being passed to awk
+# is NOT shell code: awk is a very different language!
+
+code=10                         # first code for first file
 for f; do
     [ -f "$f" ] || {
         echo "$PgmName warning: Skipping non-file argument $f"
         continue
     }
-    tmp="$f.$$"                 # "unique" name, $$ --> our PID
-    touch "$tmp"                # create as empty file
+    tmp="$f.$$"                   # "unique" name, $$ --> our PID
+    touch "$tmp"                  # create as empty file
     chmod --reference="$f" "$tmp" # set permissions of $f on "$tmp"
-    {
-awk 'BEGIN {
-    code=10
+    {                             # { awk && mv; code=next_code; }
+next_code=$(                      # capture next code
+    {                             # next code delivered to stderr
+        awk -v code="$code" '
+BEGIN {
 # each pattern has 5 parts
 # the exit-code is part 2
 # the line-number is part 4
@@ -47,9 +65,14 @@ line ~ cs {
     line=gensub(cs, "\\1" code++ "\\3\\4\\5", "1", line)
     line=gensub(cs, "\\1\\2\\3" NR "\\5", "1", line)
 }
-{print line}' "$f" >"$tmp" && mv --backup=numbered "$tmp" "$f"
-} || {
+{print line}
+END {print code >"/dev/stderr"}
+' "$f" >"$tmp"                  # end of awk with stdout redirected
+    } 2>&1                      # end of block with stderr redirected
+    ) && mv --backup=numbered "$tmp" "$f" # end of awk && mv
+code="$next_code"
+    } || {
         echo "$PgmName warning: Something went wrong processing $f"
         continue
-}
+    }
 done

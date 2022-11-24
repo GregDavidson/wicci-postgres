@@ -1,0 +1,178 @@
+* Managing pg-install Prerequisites Hello
+
+TL;DR: If there's a document in this directory for your specific Operating System platform,
+you probably don't need to read anything here!
+
+If you're looking for more understanding of the issues involved, read on!
+
+First: You don't need to worry about a software system's prerequisites if you're
+installing it using a modern packaging system, or if you are installing a
+pre-made image into a container or a VM.
+
+However: If you need or want to customize the system in ways not supported by
+available pre-packaged versions, the process becomes more challenging!
+
+The most challenging parts of the process consists of identifying and satisfying
+all of the prerequisites. But let's start with an overview of the whole process.
+
+** Installing a Complex Software System from Source
+
+Here are the steps:
+
+1. Get the source into a local directory, aka folder.
+       - You could download it as a =tar= or =zip= archive
+       - Or alternatively  =git clone= its repository
+2. Install any tools and/or libraries you'll need to configure, build and
+   install the system.
+3. Install any tools and/or libraries the system will need to run once it's been
+   built.
+4. Configure the system the way you want it configured.
+5. Build the system.
+6. Test the system
+7. Optional: Remove or save any earlier version of the system that is already installed.
+8. Install the system
+9. Test the system some more.
+
+This may seem like a linear progression, but it's actually a bunch of nested
+loops. You're likely to encounter problems in Steps 4 or 5 which tell you that
+you need to do more to satisfy Step 2. You may encounter problems in Steps 6 or
+9 which require you to redo earlier steps, especially Step 4.
+
+Every time you go back to redo earlier steps you likely need to
+1. Save anything you might need for the redo, if any
+      - Configuration profiles, transcripts, notes, etc.
+2. Remove any configuration, build or installation artifacts
+3. Redo everything from Step 4.
+
+** Discovering the Prerequisites: Hello!
+
+The Two Kinds of Prerequisites:
+
+1. The tools and libraries which are needed for the configuration, build and
+   install procedures. Some of these will not be needed after the system is
+   built.
+2. The tools and libraries needed for the installed PostgreSQL system to
+   function, once it's built.
+
+If you're going to be building and running a system on the same OS platform
+you'll need to satisfy both sets of prerequisites on that platform.
+
+The PostgreSQL documentation does not list these requisites nor does it explain
+how to find and install them. Instead, we must discover them. As we attempt to
+configure, build, install PostgreSQL we will encounter problems. We will find
+ourselves saying "Hello, something's missing!" - or words to that effect!
+
+** Requisites for Configuring, Building and Installing PostgreSQL
+
+- C Programming :: We need the tools for C Programming, e.g. the C compiler,
+  linker and standard libraries. These are generally provided as part of a
+  development tools package.
+
+- Scripting :: We need the =bash= shell, the =make= utility and the /little
+  tools/ including =grep=, =awk=, =sed=. These are generally also provided as
+  part of a standard, or easy to find package.
+
+- Libraries :: We need libraries for XML, XSLT and for any desired server-side
+  languages, e.g. =tcl=, =python=, etc. These are sometimes a bit hard to find
+  and come in diverse packages.
+
+** Requisites for Running PostgreSQL
+
+This is generally the easier part, assuming that we're planning on running
+PostgreSQL on the same platform where we did the install.
+
+If our clients are connecting to our PostgreSQL using IP Sockets, we may need to
+open our firewall for them. Otherwise, if we're using Unix-Domain sockets
+(sockets which exist in the the local filesystem), we'll need to learn how to
+inform the clients and server of the path(s) of the socket files.
+
+We'll need to create the appropriate roles, databases and permissions.
+
+We need to arrange (generally via scripts) for starting and stopping PostgreSQL
+as desired. (The provided =pg_ctl= program will do the major work, we just need
+it to be called correctly and as needed.
+
+Where we used /dynamic linking/ with the libraries we supplied during the build
+process, we will need to have the actual libraries (Microsoft calls them DLLs)
+installed where they will be found when PostgreSQL needs to load them.
+
+Any other resources PostgreSQL requires for our tasks, e.g. some of the Wicci
+materials, need to also be on hand.
+
+You should find documents specific to the various platform types as other files
+in the same directory as this document.
+
+** Long Read: Posix vs. Non-Posix, Binary vs. Source
+
+(You shouldn't need to know any of this. It may provide some helpful context for
+navigating these issues. And perhaps you enjoy knowing these kinds of things!)
+
+PostgreSQL was originally developed on machines running the BSD (Berkeley
+Software Distribution. BSD is often called Berkeley Unix as it began by
+following the architecture and conventions of the highly influential but
+proprietary Unix Timesharing System from AT&T Bell Labs. (BSD wound up leading
+Unix innovation a few years later. BSD replaced all the code it originally
+inherited from Unix. AT&T Unix then began importing BSD code!)
+
+Posix Systems now include diverse versions of Unix, BSD, MacOS (which is based
+on a version of BSD), Gnu/Linux (the GNU tools and libraries on top of the Linux
+Kernel) and similar systems. Microsoft Windows is one of the few non-Posix
+systems still in use, although it does share a few Posix features which it
+borrowed from Unix.
+
+As similar but varying Unix-like Systems became important, the Posix Standard
+was developed by an IEEE Working Group to try to keep the basic features of all
+of them compatible, primarily to ease the development of /portable/
+applications, i.e. allowing additional software systems to be easily added to
+any Posix System.
+
+Microsoft Operating Systems primarily target machines in the Intel 8086 Family
+and they have worked hard to ensure that any system which was built for machine
+running an older version Microsoft Windows will be able to run on current and
+future Microsoft Windows versions - this is called Binary Compatibility.
+
+Apple also achieves a very high degree of binary compatibility among their
+Macintosh Computers, as they completely control both the hardware and the
+software.
+
+Binary compatibility is much weaker among Posix Systems. It is usually limited
+to similar versions of particular Distributions running on very common hardware
+platforms. Whenever binary compatibility fails, systems have to be rebuild from
+source code.
+
+Most Posix Systems are built from Distributions which consist primarily of
+binary packages. Administrators and authorized Users can add additional packages
+from their Distribution's (often vast) Package Repositories. Administrators and
+Users may then build a small amount of additional software from source, usually
+managing the process "by hand".
+
+While less convenient, building systems from Source Code has a number of
+advantages over installing pre-built binary packages
+- You can customize the system to your exact preferences
+      - This can include changing the code if you wish!
+- The system will run faster when it's built for your exact hardware
+  configuration.
+
+All Posix Systems provide extensive facilities for building software from Source
+Code. A few Posix Systems provide packaging systems which work with Source Code
+Packages rather than (or in addition to) pre-built binary packages. Such systems
+largely automate the issues we're addressing here. Examples of such systems are
+Arch Linux and NixOS. Alas, with most Posix Systems, figuring out Development
+and Installation Dependencies can be difficult: Hello!
+
+Microsoft Windows has borrowed a lot from the Posix standard, including the
+hierarchical filesystem, environment variables, providing (finally!) a =bash=
+shell, etc. Microsoft Windows also has a good package installation system. Just
+not a good way of finding out what packages you might need or finding source
+code for them! Hello! Fortunately, the PostgreSQL Development Team has worked
+hard to make sure that /if you follow the right steps/ PostgreSQL can be
+configured, built and installed on any platform running a modern version of
+Microsoft Windows.
+
+We're left with a heuristic process, i.e. we discover through trial and effort
+what we need, where to find the packages for each platform and how to install
+them. These prerequisites can change over time, especially in the versions of
+the prerequisite tools and libraries required. On most platforms we can't fully
+automate the process of discovering and installing everything needed. We'll list
+below some of the general requisites and point you to other documents which may
+tell you more for the various platforms!

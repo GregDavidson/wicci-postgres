@@ -1,25 +1,40 @@
 * pg-install on Gnu/Linux
 
+This document is oriented towards satisfying dependencies using binary packages,
+but then doing the configure, build and install from a source tree.
+
+An alternative and arguably better approach would be to alter an existing source
+package to be suitable for our requirements. Then to generate a binary package
+from that altered source package. Alas, the different Gnu/Linux (let alone the
+different Posix) systems have different packaging systems, so doing this
+requires significant system-specific expertise.
+
+I would love someone who has (or is willing to acquire) such expertise to
+contribute the recipes for suitably customizing the source packages for your
+favorite Gnu/Linux (or other) packaging systems!
+
 ** pg-install on Debian Gnu/Linux
 
-This should apply, more or less, to any Debian-based distro,
-- Ubuntu, Mint, et al
+This should apply, more or less, to any Debian-based distro
+- Debian, Ubuntu, Mint, et al
 
 What's written here is based on my experience with
-- Linux Mint 20.3 una
-- based on Ubuntu 20.04 focal
-- based on debian bullseye/sid
+- Linux Mint 20.3 Una
+- which is based on Ubuntu 20.04 Focal
+- which is based on Debian bullseye/sid
+
+Please help make it more general for the whole Debian Family!
 
 *** Installing The Dependencies
 
-I didn't manage to install the build-deps for version 15.0
-and in my experience getting the build-deps for any recent
-version is fine, i.e. the version which is in the debian focal
-repository which my OS is based on..
+I didn't manage to install the build-deps specific for the version 15.0 source
+package. In my experience satisfying the build-deps for any recent version is
+fine, i.e. the version which is in the Debian Focal repository which my OS is
+based on.
 
-Best to do this all in a fresh directory as root because the source "installs"
-put things in the current directory and the mk-build-deps builds a lot of things
-in subdirectories of the CWD!
+It's best to do this all in a fresh directory as root because the source
+"installs" put things in the current directory and the =mk-build-deps= builds a
+lot of things in subdirectories of the CWD!
 #+begin_src sh
   sudo -i
   mkdir Postgres-Temp
@@ -45,6 +60,34 @@ I didn't manage to get it to install version 15.0
   # I couldn't get a version 15 out of it
 #+end_src
 
-** pg-install on RedHat Linux
 
-This might also apply to other 
+** pg-install on RPM-based Linux Systems
+
+Several quite different Gnu/Linux Systems use the RPM package format,
+including RedHat/Fedora, SuSE, Mandriva, etc.
+
+Alas, RPM packages from different RPM-based Gnu/Linux Distributions are NOT
+compatible!
+
+These systems used to use the commands =rpm= and =rpmbuild=. RedHat has now does
+most things with their tool =yum= and SuSE does most things with their tool
+=zypper=. Underlyingly, I think that these tools still call the =rpm= command,
+but I may be out of date - I've been exclusively in the Debian world for more
+than 10 years!
+
+A kludgy way I've done this before was to use =rpmbuild= to rebuild the binary
+package from the source package, which made sure that I had all of the build
+dependencies. I then installed the binary package I'd created which as a side
+effect installed all of the other binary packages to satisfy the runtime
+dependencies of my package. Then I removed that binary package so that I could
+install it again from source.
+
+There's likely a simpler way to do this in the RPM world. Can explain how?
+
+*** Details for RedHat and Fedora
+
+Who can help out here?
+
+*** Details for SuSE Linux
+
+Who can help out here?

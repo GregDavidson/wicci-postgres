@@ -5,6 +5,35 @@ of this file as into an /OrgMode Literate Programming Document/!
 
 In the meantime, we're pooling issues and commentary here.  It's messy!
 
+** Status
+
+The script currently works on my system:
+- Linux Mint 20.3 Una
+- which is based on Ubuntu 20.04 Focal
+- which is based on Debian bullseye/sid
+
+with appropriate dependency packages installed.
+- see [[file:pg-install-linux.org][pg-install-linux.org]] for details
+
+** Roadmap
+
+*** Gather experience and contributions from others
+- Create scripts to help with pre-requisites on diverse platforms!
+- Expand portability and intelligibility!
+- Expand on 
+
+*** Possible New Features
+- Add a pattern to download and check tar archives
+      - we're already got the script for it
+- Generalize current git pattern to
+      - Check if it's a git or other source directory
+      - If it's a git directory, check out the desired working version in the
+        external PARENT-INSTALL-DIR
+- Removing unwanted installs and attempts
+- Updating default install link
+- Supporting Unix Sockets allowing for multiple simultaneous servers
+- Warning of apparent new items in postgresql_conf
+
 ** Issues
 
 - Prune these issues before this script is released!

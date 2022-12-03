@@ -870,14 +870,15 @@ edit_pg_conf() {
     local conf1=${PG_Conf##*/}    # for nicer error messages
     local conf2="$conf1.$setting" # ditto
 
-    [ 1 -ne $(grep -c "\\<$setting\\>" "$PG_Conf") ] || {
+    [ 1 -eq $(grep -c "\\<$setting\\>" "$PG_Conf") ] || {
         report -warning `cr 1 1 $this` "$conf1 $setting count != 1"
         let ++PG_Problem_Count
         return 1
     }
+    report -command "`cr 1 1 $this`" sed "/$setting *=/h;s/^#*//;s/$from/$to/;x" "$PG_Conf"
     sed "/$setting *=/h;s/^#*//;s/$from/$to/;x" \
         "$PG_Conf" >> "$PG_Conf.$setting"
-    [ 2 -eq $(grep -c "\\<$setting\\>") ] || {
+    [ 2 -eq $(grep -c "\\<$setting\\>" "$PG_Conf.$setting") ] || {
         report -warning "`cr 65 881 $this`" "$conf2 count != 2"
         let ++PG_Problem_Count
         return 1

@@ -1,4 +1,4 @@
-VERSION=15.0
+VERSION=15.1
 .PHONY: help full_clean dryrun renumber attempt
 help:
 	./pg-install

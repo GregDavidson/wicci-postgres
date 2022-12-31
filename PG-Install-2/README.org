@@ -16,4 +16,7 @@ These scripts run on my system
 Please test them on your system
 - and help make them better and more portable!
 
-Before reading the code, read [[https://github.com/GregDavidson/computing-magic/blob/main/Scripting/Shell-Scripting-Tutorial/shell-script-resilience.org][Shell Script Resilience]]
+Before or while reading the code, read
+- [[https://github.com/GregDavidson/computing-magic/blob/main/Scripting/Shell-Scripting-Tutorial/shell-script-resilience.org][Shell Script Resilience]]
+- [[file:../README.org][Overview of the Task]]
+- [[file:../Doc/README.org][Further Documentation]]

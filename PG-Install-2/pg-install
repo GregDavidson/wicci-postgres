@@ -6,6 +6,10 @@
 
 # Run this script with no arguments for help!
 
+# I recommend that you read
+# https://github.com/GregDavidson/computing-magic/blob/main/Scripting/Shell-Scripting-Tutorial/shell-script-resilience.org
+# before reading the code in this script!
+
 # All action is orchestrated at the end of the script
 # by calling the functions whose names begin with do_
 
@@ -28,12 +32,12 @@
 #   return 0 # as last statement in a function
 #   || true  # at end of an expression
 # - but don't add these gratuitously or you'll conceal errors!
-# Note that vaiable settings don't change exit status, so
-#   COMMAND || VARIABLE-SETTING
-# Should be rewritten as
-#   COMMAND || VARIABLE-SETTING || true
+# Note that parameter settings don't change exit status, so
+#   COMMAND || PARAMETER-SETTING
+# Might be rewritten as
+#   COMMAND || PARAMETER-SETTING || true
 
-set -u                          # exit when referencing undefined variables
+set -u                          # exit when referencing undefined parameters
 set -o pipefail                 # capture last non-zero status in pipeline
 
 readonly Pgm_Name="${0##*/}"    # Name of this script

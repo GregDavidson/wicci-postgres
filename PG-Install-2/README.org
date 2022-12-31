@@ -10,3 +10,5 @@ You'll also need to customize, but not run:
 These scripts run on my system
 - please test them on your system
 - and help make them better and more portable!
+
+Before reading the code, read [[https://github.com/GregDavidson/computing-magic/blob/main/Scripting/Shell-Scripting-Tutorial/shell-script-resilience.org][Shell Script Resilience]]
